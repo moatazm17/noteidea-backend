@@ -12,11 +12,11 @@ const contentSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    required: true
+    default: 'Processing...'
   },
   contentType: {
     type: String,
-    enum: ['tiktok', 'screenshot', 'other'],
+    enum: ['tiktok', 'screenshot', 'other', 'video', 'image'],
     required: true
   },
   aiTags: [{
@@ -42,11 +42,24 @@ const contentSchema = new mongoose.Schema({
   savedAt: {
     type: Date,
     default: Date.now
+  },
+  // New fields for background processing
+  processingStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed'],
+    default: 'pending'
+  },
+  processedAt: {
+    type: Date
+  },
+  errorMessage: {
+    type: String
   }
 });
 
 // Index for better search performance
 contentSchema.index({ deviceId: 1, aiTags: 1 });
 contentSchema.index({ deviceId: 1, savedAt: -1 });
+contentSchema.index({ processingStatus: 1, savedAt: 1 }); // For background job processing
 
 module.exports = mongoose.model('Content', contentSchema);

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Content = require('../models/Content');
 const aiService = require('../services/aiService');
+const { extractBasicTitle, detectContentType, getPlaceholderThumbnail } = require('../utils/urlUtils');
 
 // Get all content for a device
 router.get('/content/:deviceId', async (req, res) => {
@@ -22,8 +23,14 @@ router.get('/content/:deviceId', async (req, res) => {
     
     // Group by content type for organized display
     const grouped = {
-      videos: content.filter(item => item.contentType === 'tiktok'),
-      screenshots: content.filter(item => item.contentType === 'screenshot'),
+      videos: content.filter(item => 
+        item.contentType === 'tiktok' || 
+        item.contentType === 'video'
+      ),
+      screenshots: content.filter(item => 
+        item.contentType === 'screenshot' || 
+        item.contentType === 'image'
+      ),
       recent: content.slice(0, 6) // Last 6 items
     };
     
@@ -37,42 +44,94 @@ router.get('/content/:deviceId', async (req, res) => {
   }
 });
 
-// Save new content
+// Save new content (INSTANT RESPONSE with background processing)
 router.post('/save', async (req, res) => {
   try {
-    const { deviceId, url, contentType } = req.body;
+    const { deviceId, url, contentType: providedType } = req.body;
     
-    if (!deviceId || !url || !contentType) {
+    if (!deviceId || !url) {
       return res.status(400).json({ 
         success: false, 
-        error: 'deviceId, url, and contentType are required' 
+        error: 'deviceId and url are required' 
       });
     }
     
-    // Use AI to analyze content
-    const analysis = await aiService.analyzeContent(url, contentType);
+    // Auto-detect content type if not provided
+    const contentType = providedType || detectContentType(url);
     
+    // Create content immediately with basic metadata
     const content = new Content({
       deviceId,
       url,
       contentType,
-      title: analysis.title,
-      description: analysis.description,
-      aiTags: analysis.tags,
-      thumbnail: analysis.thumbnail
+      title: extractBasicTitle(url),
+      description: 'AI analysis in progress...',
+      aiTags: [contentType], // Basic tag while processing
+      thumbnail: getPlaceholderThumbnail(contentType),
+      processingStatus: 'pending'
     });
     
     await content.save();
     
+    // Queue for background AI processing (we'll implement the worker next)
+    // For now, we'll process immediately in background
+    processContentInBackground(content._id);
+    
+    // Return immediately with success
     res.json({ 
       success: true, 
       data: content,
-      message: 'Content saved successfully!'
+      message: 'Content saved! AI analysis in progress...'
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Background processing function
+async function processContentInBackground(contentId) {
+  try {
+    // Run in background without blocking the response
+    setTimeout(async () => {
+      try {
+        const content = await Content.findById(contentId);
+        if (!content || content.processingStatus !== 'pending') {
+          return;
+        }
+        
+        // Update status to processing
+        content.processingStatus = 'processing';
+        await content.save();
+        
+        // Run AI analysis
+        const analysis = await aiService.analyzeContent(content.url, content.contentType);
+        
+        // Update with AI results
+        content.title = analysis.title || content.title;
+        content.description = analysis.description || '';
+        content.aiTags = analysis.tags || [content.contentType];
+        content.thumbnail = analysis.thumbnail || content.thumbnail;
+        content.processingStatus = 'completed';
+        content.processedAt = new Date();
+        
+        await content.save();
+        
+        console.log(`✅ Background processing completed for content ${contentId}`);
+      } catch (error) {
+        console.error(`❌ Background processing failed for content ${contentId}:`, error);
+        
+        // Update with error status
+        await Content.findByIdAndUpdate(contentId, {
+          processingStatus: 'failed',
+          errorMessage: error.message,
+          processedAt: new Date()
+        });
+      }
+    }, 100); // Process after 100ms to ensure response is sent
+  } catch (error) {
+    console.error('Error queuing background job:', error);
+  }
+}
 
 // Search content
 router.get('/search/:deviceId', async (req, res) => {
@@ -138,6 +197,40 @@ router.get('/content/:deviceId/:contentId', async (req, res) => {
     await content.save();
     
     res.json({ success: true, data: content });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get processing status for content
+router.get('/status/:deviceId', async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    
+    const stats = await Content.aggregate([
+      { $match: { deviceId } },
+      { 
+        $group: {
+          _id: '$processingStatus',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    const statusMap = {};
+    stats.forEach(stat => {
+      statusMap[stat._id] = stat.count;
+    });
+    
+    res.json({ 
+      success: true, 
+      data: {
+        pending: statusMap.pending || 0,
+        processing: statusMap.processing || 0,
+        completed: statusMap.completed || 0,
+        failed: statusMap.failed || 0
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
