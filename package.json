@@ -1,7 +1,7 @@
 {
-  "name": "noteidea-backend",
+  "name": "kova-backend",
   "version": "1.0.0",
-  "description": "AI-powered content saving and search API",
+  "description": "Kova - AI-powered content saving and search API",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

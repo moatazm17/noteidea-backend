@@ -1,6 +1,6 @@
-# NoteIdea Backend API
+# Kova Backend API
 
-AI-powered content saving and search API for mobile app.
+AI-powered content saving and search API for Kova mobile app.
 
 ## Features
 

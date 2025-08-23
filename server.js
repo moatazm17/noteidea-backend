@@ -11,13 +11,13 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/noteidea')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kova')
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.get('/', (req, res) => {
-  res.json({ message: 'NoteIdea API is running!' });
+  res.json({ message: 'Kova API is running!' });
 });
 
 // Import routes (we'll create these next)
