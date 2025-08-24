@@ -133,6 +133,31 @@ async function processContentInBackground(contentId) {
   }
 }
 
+// Reprocess content that's stuck in pending
+router.post('/reprocess/:contentId', async (req, res) => {
+  try {
+    const { contentId } = req.params;
+    
+    const content = await Content.findById(contentId);
+    if (!content) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Content not found' 
+      });
+    }
+    
+    // Force reprocess
+    processContentInBackground(contentId);
+    
+    res.json({ 
+      success: true, 
+      message: 'Content queued for reprocessing' 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Search content
 router.get('/search/:deviceId', async (req, res) => {
   try {
