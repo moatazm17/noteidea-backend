@@ -54,32 +54,54 @@ class AIService {
       return this.getEnhancedTikTokFallback(url, realMetadata);
     }
     
-    // Use OpenAI with real metadata if available
-    const prompt = realMetadata ? `
-    Analyze this TikTok video with the following metadata:
-    Title: ${realMetadata.title || 'Unknown'}
-    Description: ${realMetadata.description || 'No description'}
-    Author: ${realMetadata.author || 'Unknown'}
-    URL: ${url}
-    
-    Generate smart tags and analysis:
-    1. A clean, engaging title (max 60 characters)
-    2. 5-8 relevant search tags based on content
-    3. A concise description highlighting key points
-    
-    Return as JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
-    ` : `
-    Analyze this TikTok URL: ${url}
-    
-    Based on TikTok content patterns and URL structure, generate:
-    1. A descriptive title (max 50 characters)
-    2. 5-7 relevant search tags
-    3. A brief description
-    
-    Focus on common TikTok categories: cooking, dancing, comedy, tutorials, trends, etc.
-    
-    Return as JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
-    `;
+                // First try to get video transcript for REAL analysis
+            let transcript = null;
+            try {
+              transcript = await this.getVideoTranscript(url);
+              console.log('📝 Transcript fetched:', transcript ? 'SUCCESS' : 'FAILED');
+            } catch (error) {
+              console.warn('⚠️  Transcript fetch failed:', error.message);
+            }
+
+            // Use OpenAI with REAL content analysis
+            const prompt = transcript ? `
+            Analyze this TikTok video with REAL content:
+            
+            Title: "${realMetadata?.title || 'Unknown'}"
+            Author: ${realMetadata?.author || 'Unknown'}
+            Video Transcript: "${transcript}"
+            
+            Based on the ACTUAL spoken content in the transcript, determine:
+            1. What is the person actually saying/doing?
+            2. Is this a lip-sync, dance, cooking, comedy, tutorial, or something else?
+            3. What are the key topics mentioned in the speech?
+            
+            Generate accurate analysis:
+            - Title: Describe what's ACTUALLY happening (max 60 chars)
+            - Tags: Based on spoken content and actions (5-8 tags)
+            - Description: Summarize the actual content (not assumptions)
+            
+            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+            ` : realMetadata ? `
+            Analyze this TikTok video with limited metadata:
+            Title: "${realMetadata.title || 'Unknown'}"
+            Author: ${realMetadata.author || 'Unknown'}
+            
+            Since we don't have transcript, analyze ONLY what we can infer from the title.
+            Don't make assumptions about content type.
+            Be conservative and generic if unclear.
+            
+            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+            ` : `
+            Analyze this TikTok URL: ${url}
+            
+            Without transcript or metadata, provide generic TikTok analysis:
+            - Title: Generic but engaging
+            - Tags: Basic TikTok-related tags
+            - Description: Generic social media content description
+            
+            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+            `;
 
     try {
       const response = await openai.chat.completions.create({
@@ -295,32 +317,94 @@ class AIService {
     };
   }
 
-  // Generate smart tags from title/content
-  generateSmartTags(title, contentType) {
-    const baseTags = [contentType];
-    
-    if (!title) return baseTags;
-    
-    const keywords = {
-      cooking: ['recipe', 'food', 'cook', 'kitchen', 'chef', 'meal', 'ingredient'],
-      fitness: ['workout', 'exercise', 'gym', 'health', 'fitness', 'training'],
-      tutorial: ['how', 'diy', 'tutorial', 'guide', 'learn', 'tip', 'hack'],
-      comedy: ['funny', 'laugh', 'joke', 'humor', 'comedy', 'meme'],
-      dance: ['dance', 'dancing', 'moves', 'choreography', 'performance'],
-      music: ['music', 'song', 'singing', 'cover', 'performance', 'audio'],
-      viral: ['viral', 'trending', 'popular', 'hot', 'fire']
-    };
-    
-    const titleLower = title.toLowerCase();
-    
-    for (const [category, words] of Object.entries(keywords)) {
-      if (words.some(word => titleLower.includes(word))) {
-        baseTags.push(category);
-      }
-    }
-    
-    return [...new Set(baseTags)]; // Remove duplicates
-  }
+            // Get video transcript from TikTok video
+          async getVideoTranscript(url) {
+            try {
+              // Extract video ID from TikTok URL
+              const videoId = this.extractTikTokId(url);
+              if (!videoId) {
+                throw new Error('Could not extract video ID from URL');
+              }
+
+              // Try multiple transcript APIs
+              return await this.tryTranscriptAPIs(videoId, url);
+            } catch (error) {
+              console.error('❌ Transcript fetch failed:', error);
+              return null;
+            }
+          }
+
+          async tryTranscriptAPIs(videoId, originalUrl) {
+            const apis = [
+              // API 1: Direct TikTok transcript (if available)
+              () => this.getTikTokDirectTranscript(videoId),
+              // API 2: Generic video transcript service
+              () => this.getGenericVideoTranscript(originalUrl),
+              // API 3: Audio extraction + speech-to-text
+              () => this.extractAudioAndTranscribe(originalUrl)
+            ];
+
+            for (const apiCall of apis) {
+              try {
+                const result = await apiCall();
+                if (result) {
+                  console.log('✅ Transcript API succeeded');
+                  return result;
+                }
+              } catch (error) {
+                console.warn('⚠️  Transcript API failed:', error.message);
+                continue; // Try next API
+              }
+            }
+
+            return null; // All APIs failed
+          }
+
+          async getTikTokDirectTranscript(videoId) {
+            // For now, return null - we'd need a specific TikTok transcript API
+            // This is where we'd integrate with services like Supadata or Masa
+            console.log('🔍 Direct TikTok transcript not implemented yet');
+            return null;
+          }
+
+          async getGenericVideoTranscript(url) {
+            // Placeholder for generic video transcript services
+            console.log('🔍 Generic video transcript not implemented yet');
+            return null;
+          }
+
+          async extractAudioAndTranscribe(url) {
+            // Placeholder for audio extraction + OpenAI Whisper
+            console.log('🔍 Audio extraction + Whisper not implemented yet');
+            return null;
+          }
+
+          // Generate smart tags from title/content
+          generateSmartTags(title, contentType) {
+            const baseTags = [contentType];
+            
+            if (!title) return baseTags;
+            
+            const keywords = {
+              cooking: ['recipe', 'food', 'cook', 'kitchen', 'chef', 'meal', 'ingredient'],
+              fitness: ['workout', 'exercise', 'gym', 'health', 'fitness', 'training'],
+              tutorial: ['how', 'diy', 'tutorial', 'guide', 'learn', 'tip', 'hack'],
+              comedy: ['funny', 'laugh', 'joke', 'humor', 'comedy', 'meme'],
+              dance: ['dance', 'dancing', 'moves', 'choreography', 'performance'],
+              music: ['music', 'song', 'singing', 'cover', 'performance', 'audio'],
+              viral: ['viral', 'trending', 'popular', 'hot', 'fire']
+            };
+            
+            const titleLower = title.toLowerCase();
+            
+            for (const [category, words] of Object.entries(keywords)) {
+              if (words.some(word => titleLower.includes(word))) {
+                baseTags.push(category);
+              }
+            }
+            
+            return [...new Set(baseTags)]; // Remove duplicates
+          }
 }
 
 module.exports = new AIService();
