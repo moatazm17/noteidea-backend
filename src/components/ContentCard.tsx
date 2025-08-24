@@ -17,12 +17,31 @@ interface ContentCardProps {
 const ContentCard: React.FC<ContentCardProps> = ({ content, width, onPress }) => {
   const getIcon = () => {
     switch (content.contentType) {
+      case 'tiktok':
       case 'video':
         return '🎥';
+      case 'screenshot':
       case 'image':
         return '📸';
       default:
         return '🔗';
+    }
+  };
+
+  const getProcessingIndicator = () => {
+    if (!content.processingStatus || content.processingStatus === 'completed') {
+      return null;
+    }
+    
+    switch (content.processingStatus) {
+      case 'pending':
+        return '⏳';
+      case 'processing':
+        return '🔄';
+      case 'failed':
+        return '❌';
+      default:
+        return null;
     }
   };
 
@@ -71,6 +90,13 @@ const ContentCard: React.FC<ContentCardProps> = ({ content, width, onPress }) =>
         <View style={styles.typeBadge}>
           <Text style={styles.typeText}>{getIcon()}</Text>
         </View>
+        
+        {/* Processing Status Indicator */}
+        {getProcessingIndicator() && (
+          <View style={styles.processingBadge}>
+            <Text style={styles.processingText}>{getProcessingIndicator()}</Text>
+          </View>
+        )}
       </View>
 
       {/* Content Info */}
@@ -145,6 +171,18 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   typeText: {
+    fontSize: 12,
+  },
+  processingBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(255, 193, 7, 0.9)',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  processingText: {
     fontSize: 12,
   },
   contentInfo: {

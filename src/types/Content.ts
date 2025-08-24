@@ -3,13 +3,17 @@ export interface IContent {
   deviceId: string;
   url: string;
   title: string;
-  contentType: 'video' | 'image' | 'other';
+  contentType: 'video' | 'image' | 'other' | 'tiktok' | 'screenshot';
   aiTags: string[];
   description: string;
   thumbnail?: string;
   viewCount?: number;
   isFavorite: boolean;
   savedAt: string;
+  // New fields for background processing
+  processingStatus?: 'pending' | 'processing' | 'completed' | 'failed';
+  processedAt?: string;
+  errorMessage?: string;
 }
 
 // Keep legacy export for backward compatibility

@@ -46,8 +46,8 @@ const SaveScreen = ({ navigation }: any) => {
 
       if (response.success) {
         Alert.alert(
-          'Success!',
-          'Content saved successfully!',
+          '🎉 Saved!',
+          'Content saved instantly! AI analysis is running in the background.',
           [
             {
               text: 'Save Another',
