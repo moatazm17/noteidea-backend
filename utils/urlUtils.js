@@ -47,12 +47,15 @@ function detectContentType(url) {
   try {
     const urlObj = new URL(url);
     
-    // Video platforms
-    if (urlObj.hostname.includes('tiktok.com') || 
-        urlObj.hostname.includes('youtube.com') || 
-        urlObj.hostname.includes('youtu.be') ||
-        urlObj.hostname.includes('instagram.com')) {
-      return 'video';
+    // Explicit platform detection first (so AI path can specialize)
+    if (urlObj.hostname.includes('tiktok.com')) {
+      return 'tiktok';
+    }
+    if (urlObj.hostname.includes('youtube.com') || urlObj.hostname.includes('youtu.be')) {
+      return 'youtube';
+    }
+    if (urlObj.hostname.includes('instagram.com')) {
+      return 'instagram';
     }
     
     // Image files
