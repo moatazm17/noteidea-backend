@@ -58,6 +58,7 @@ router.post('/save', async (req, res) => {
     
     // Auto-detect content type if not provided
     const contentType = providedType || detectContentType(url);
+    console.log('\n[SAVE] New content', { deviceId, url, providedType, detectedType: contentType });
     
     // Create content immediately with basic metadata
     const content = new Content({
@@ -72,6 +73,7 @@ router.post('/save', async (req, res) => {
     });
     
     await content.save();
+    console.log('[SAVE] Created content', { id: content._id.toString(), contentType: content.contentType, title: content.title });
     
     // Queue for background AI processing (we'll implement the worker next)
     // For now, we'll process immediately in background
@@ -104,7 +106,9 @@ async function processContentInBackground(contentId) {
         await content.save();
         
         // Run AI analysis
+        console.log('[AI] Starting analysis', { id: content._id.toString(), type: content.contentType, url: content.url });
         const analysis = await aiService.analyzeContent(content.url, content.contentType);
+        console.log('[AI] Analysis result', { id: content._id.toString(), title: analysis?.title, tags: analysis?.tags });
         
         // Update with AI results
         content.title = analysis.title || content.title;
