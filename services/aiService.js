@@ -83,22 +83,40 @@ class AIService {
             
             Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
             ` : realMetadata ? `
-            Analyze this TikTok video with limited metadata:
+            CREATE A SMART TITLE from this TikTok metadata:
             Title: "${realMetadata.title || 'Unknown'}"
             Author: ${realMetadata.author || 'Unknown'}
+            URL: ${url}
             
-            Since we don't have transcript, analyze ONLY what we can infer from the title.
-            Don't make assumptions about content type.
-            Be conservative and generic if unclear.
+            RULES:
+            1. NEVER just say "TikTok Video" or "Fun Times" - that's LAZY
+            2. If title mentions cooking/food → create cooking-focused title
+            3. If it's a person's name → guess what they're doing based on their content style
+            4. If unclear → be creative but specific
+            5. Make it ENGAGING and CLICKABLE
+            
+            EXAMPLES:
+            - "Celine Ko Lip Sync Performance" 
+            - "Gordon Ramsay's Quick Cooking Tip"
+            - "Dance Challenge Compilation"
+            - "DIY Home Decor Hack"
+            
+            Generate:
+            - Title: Creative, specific, engaging (max 60 chars)
+            - Tags: Relevant to likely content (5-8 tags)
+            - Description: What viewer would expect to see
             
             Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
             ` : `
-            Analyze this TikTok URL: ${url}
+            Create content from this TikTok URL: ${url}
             
-            Without transcript or metadata, provide generic TikTok analysis:
-            - Title: Generic but engaging
-            - Tags: Basic TikTok-related tags
-            - Description: Generic social media content description
+            Extract creator from URL and make SMART guesses:
+            - If @gordonramsay → cooking content
+            - If @dance* → dance content  
+            - If @comedy* → funny content
+            - If @beauty* → makeup/style
+            
+            Be CREATIVE but LOGICAL. No generic "TikTok Video" bullshit.
             
             Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
             `;
@@ -277,45 +295,136 @@ class AIService {
     return null;
   }
 
-  // Enhanced fallback for TikTok when OpenAI is not available
-  getEnhancedTikTokFallback(url, metadata) {
-    if (metadata) {
-      return {
-        title: metadata.title || 'TikTok Video',
-        description: `Video by ${metadata.author || 'Unknown'} on TikTok`,
-        tags: this.generateSmartTags(metadata.title, 'tiktok'),
-        thumbnail: metadata.thumbnail || this.generateTikTokThumbnail(url)
-      };
-    }
-    
-    // URL-based analysis for common TikTok patterns
-    const urlPatterns = {
-      dance: /dance|dancing|twerk|choreography|moves/i,
-      cooking: /cook|recipe|food|eat|kitchen|chef/i,
-      comedy: /funny|humor|laugh|joke|comedy|meme/i,
-      tutorial: /tutorial|howto|diy|learn|tips|guide/i,
-      fitness: /workout|fitness|gym|exercise|health/i,
-      music: /music|song|singing|cover|performance/i
-    };
-    
-    let category = 'viral';
-    let tags = ['tiktok', 'video'];
-    
-    for (const [cat, pattern] of Object.entries(urlPatterns)) {
-      if (pattern.test(url)) {
-        category = cat;
-        tags.push(cat);
-        break;
-      }
-    }
-    
-    return {
-      title: `${category.charAt(0).toUpperCase() + category.slice(1)} TikTok Video`,
-      description: `Viral ${category} content from TikTok`,
-      tags: [...tags, 'viral', 'social-media'],
-      thumbnail: this.generateTikTokThumbnail(url)
-    };
-  }
+            // Enhanced fallback for TikTok when OpenAI is not available
+          getEnhancedTikTokFallback(url, metadata) {
+            // Extract creator name from URL
+            const creatorMatch = url.match(/@([^\/]+)/);
+            const creator = creatorMatch ? creatorMatch[1] : null;
+            
+            if (metadata && metadata.title) {
+              // Use metadata title but make it smarter
+              const title = this.generateSmartTitleFromMetadata(metadata.title, creator);
+              return {
+                title,
+                description: this.generateSmartDescription(title, creator),
+                tags: this.generateSmartTags(metadata.title, 'tiktok'),
+                thumbnail: metadata.thumbnail || this.generateTikTokThumbnail(url)
+              };
+            }
+            
+            // Creator-based smart analysis
+            if (creator) {
+              const creatorAnalysis = this.analyzeCreatorFromUsername(creator);
+              return {
+                title: `${creatorAnalysis.name} ${creatorAnalysis.contentType}`,
+                description: `${creatorAnalysis.description} Check out this ${creatorAnalysis.contentType.toLowerCase()} from ${creatorAnalysis.name}!`,
+                tags: [...creatorAnalysis.tags, 'tiktok', 'video'],
+                thumbnail: this.generateTikTokThumbnail(url)
+              };
+            }
+            
+            // Generic but still better than "TikTok Video"
+            return {
+              title: 'Trending Social Media Content',
+              description: 'Viral content from TikTok worth checking out',
+              tags: ['tiktok', 'viral', 'trending', 'social-media'],
+              thumbnail: this.generateTikTokThumbnail(url)
+            };
+          }
+
+          generateSmartTitleFromMetadata(title, creator) {
+            // Clean up lazy titles
+            if (title.toLowerCase().includes('tiktok video') || title.toLowerCase().includes('fun times')) {
+              if (creator) {
+                return `${creator} Content Creation`;
+              }
+              return 'Creative Social Media Content';
+            }
+            
+            // If title is just a name, make it better
+            if (title.split(' ').length <= 2 && creator) {
+              return `${title} Performance`;
+            }
+            
+            return title;
+          }
+
+          generateSmartDescription(title, creator) {
+            const creatorText = creator ? ` by ${creator}` : '';
+            return `${title}${creatorText}. Engaging content worth saving for later reference.`;
+          }
+
+          analyzeCreatorFromUsername(username) {
+            const lowerUsername = username.toLowerCase();
+            
+            // Chef/Cooking patterns
+            if (lowerUsername.includes('chef') || lowerUsername.includes('cook') || lowerUsername.includes('recipe') || lowerUsername.includes('gordon')) {
+              return {
+                name: this.formatCreatorName(username),
+                contentType: 'Cooking Tutorial',
+                description: 'Culinary expertise and cooking tips.',
+                tags: ['cooking', 'recipe', 'chef', 'food']
+              };
+            }
+            
+            // Dance patterns
+            if (lowerUsername.includes('dance') || lowerUsername.includes('choreo') || lowerUsername.includes('moves')) {
+              return {
+                name: this.formatCreatorName(username),
+                contentType: 'Dance Performance',
+                description: 'Creative dance moves and choreography.',
+                tags: ['dance', 'performance', 'choreography', 'music']
+              };
+            }
+            
+            // Beauty/Fashion patterns
+            if (lowerUsername.includes('beauty') || lowerUsername.includes('makeup') || lowerUsername.includes('style')) {
+              return {
+                name: this.formatCreatorName(username),
+                contentType: 'Beauty & Style',
+                description: 'Beauty tips and style inspiration.',
+                tags: ['beauty', 'makeup', 'style', 'fashion']
+              };
+            }
+            
+            // Fitness patterns
+            if (lowerUsername.includes('fit') || lowerUsername.includes('gym') || lowerUsername.includes('workout')) {
+              return {
+                name: this.formatCreatorName(username),
+                contentType: 'Fitness Content',
+                description: 'Workout tips and fitness motivation.',
+                tags: ['fitness', 'workout', 'health', 'motivation']
+              };
+            }
+            
+            // Comedy patterns
+            if (lowerUsername.includes('comedy') || lowerUsername.includes('funny') || lowerUsername.includes('meme')) {
+              return {
+                name: this.formatCreatorName(username),
+                contentType: 'Comedy Content',
+                description: 'Entertaining and humorous content.',
+                tags: ['comedy', 'funny', 'entertainment', 'humor']
+              };
+            }
+            
+            // Default for unknown creators
+            return {
+              name: this.formatCreatorName(username),
+              contentType: 'Creative Content',
+              description: 'Original creative content and entertainment.',
+              tags: ['creative', 'entertainment', 'original']
+            };
+          }
+
+          formatCreatorName(username) {
+            // Capitalize first letter of each word and remove special chars
+            return username
+              .replace(/[^a-zA-Z0-9\s]/g, ' ')
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ')
+              .trim();
+          }
 
             // Get video transcript from TikTok video
           async getVideoTranscript(url) {
