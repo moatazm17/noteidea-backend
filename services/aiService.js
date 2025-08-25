@@ -17,6 +17,25 @@ if (!openai) {
 }
 
 class AIService {
+  // Helper function to extract JSON from OpenAI responses
+  extractJson(text) {
+    if (!text) return null;
+    let t = text.trim().replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
+    const start = t.indexOf('{');
+    const end = t.lastIndexOf('}');
+    if (start === -1 || end === -1 || start >= end) return null;
+    
+    try {
+      const jsonStr = t.substring(start, end + 1)
+        .replace(/,\s*}/g, '}')  // Remove trailing commas
+        .replace(/,\s*]/g, ']'); // Remove trailing commas in arrays
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      console.warn('⚠️ JSON parse failed:', e.message, 'Raw:', t.slice(0, 200));
+      return null;
+    }
+  }
+
   async analyzeContent(url, contentType) {
     try {
       if (contentType === 'tiktok') {
@@ -117,17 +136,7 @@ class AIService {
             URL: ${url}
             `;
 
-      const extractJson = (text) => {
-        if (!text) return null;
-        let t = text.trim().replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
-        const start = t.indexOf('{');
-        const end = t.lastIndexOf('}');
-        if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1);
-        try { return JSON.parse(t); } catch {
-          const cleaned = t.replace(/,\s*([}\]])/g, '$1');
-          try { return JSON.parse(cleaned); } catch { return null; }
-        }
-      };
+
 
       const buildSummary = (analysis) => {
         // Cooking-specific pretty summary
@@ -168,7 +177,7 @@ class AIService {
         });
 
         const raw = response.choices?.[0]?.message?.content || '';
-        const analysis = extractJson(raw) || {};
+        const analysis = this.extractJson(raw) || {};
         if (!analysis || Object.keys(analysis).length === 0) {
           console.warn('⚠️ OpenAI returned non-JSON or empty analysis. Raw:', raw.slice(0, 500));
         }
@@ -279,7 +288,7 @@ class AIService {
         response_format: { type: "json_object" }
       });
 
-      const analysis = extractJson(response.choices[0].message.content);
+      const analysis = this.extractJson(response.choices[0].message.content);
       console.log('🤖 GPT-4 Vision analysis completed for screenshot');
       
       return {
