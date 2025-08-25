@@ -594,187 +594,85 @@ class AIService {
 
             // Get video transcript from TikTok video
           async getVideoTranscript(url) {
+            console.log('🔍 Attempting to get video transcript via Masa...');
             try {
-              // Extract video ID from TikTok URL
-              const videoId = this.extractTikTokId(url);
-              if (!videoId) {
-                throw new Error('Could not extract video ID from URL');
+              const transcript = await this.getMasaTranscript(url);
+              if (transcript && transcript.trim().length > 0) {
+                console.log('✅ Masa transcript obtained');
+                return transcript;
               }
-
-              // Try multiple transcript APIs
-              return await this.tryTranscriptAPIs(videoId, url);
+              console.log('⚠️ Masa returned no transcript');
+              return null;
             } catch (error) {
-              console.error('❌ Transcript fetch failed:', error);
+              console.error('❌ Masa transcript failed:', error.message || error);
               return null;
             }
           }
 
-          async tryTranscriptAPIs(videoId, originalUrl) {
-            const apis = [
-              // API 1: Direct TikTok transcript (if available)
-              () => this.getTikTokDirectTranscript(videoId),
-              // API 2: Generic video transcript service
-              () => this.getGenericVideoTranscript(originalUrl),
-              // API 3: Audio extraction + speech-to-text
-              () => this.extractAudioAndTranscribe(originalUrl)
-            ];
-
-            for (const apiCall of apis) {
-              try {
-                const result = await apiCall();
-                if (result) {
-                  console.log('✅ Transcript API succeeded');
-                  return result;
+          async getMasaTranscript(videoUrl) {
+            // Docs: provided by user via curl
+            try {
+              const resp = await axios.post(
+                'https://data.masa.ai/api/v1/search/live/tiktok',
+                {
+                  type: 'tiktok',
+                  arguments: {
+                    type: 'transcription',
+                    video_url: videoUrl,
+                    language: 'eng-US'
+                  }
+                },
+                {
+                  headers: {
+                    'Authorization': `Bearer ${process.env.MASA_API_KEY}`,
+                    'Content-Type': 'application/json'
+                  },
+                  timeout: 60000
                 }
-              } catch (error) {
-                console.warn('⚠️  Transcript API failed:', error.message);
-                continue; // Try next API
-              }
-            }
+              );
 
-            return null; // All APIs failed
+              // Masa may return immediate transcript or a job structure depending on plan
+              if (resp.data && typeof resp.data === 'string') {
+                return resp.data;
+              }
+
+              if (resp.data && resp.data.transcript) {
+                return resp.data.transcript;
+              }
+
+              // Some responses may include nested result
+              if (resp.data && resp.data.result && resp.data.result.transcript) {
+                return resp.data.result.transcript;
+              }
+
+              return null;
+            } catch (error) {
+              // Surface useful info for debugging
+              const msg = error.response?.data ? JSON.stringify(error.response.data) : (error.message || 'unknown error');
+              console.log('⚠️ Masa API error:', msg);
+              return null;
+            }
+          }
+
+          // Remove multi-provider logic and fallbacks; keep simple
+          async tryTranscriptAPIs(videoId, originalUrl) {
+            // Deprecated: we now only use Masa
+            return null;
           }
 
           async getTikTokDirectTranscript(url) {
-            try {
-              console.log('🔍 Trying Supadata TikTok Transcript API...');
-              
-              // Try Supadata API for TikTok transcripts
-              const transcriptResponse = await axios.post('https://api.supadata.ai/v1/tiktok/transcript', {
-                url: url
-              }, {
-                headers: {
-                  'Content-Type': 'application/json',
-                  // Add API key if we get one: 'Authorization': `Bearer ${process.env.SUPADATA_API_KEY}`
-                },
-                timeout: 10000
-              });
-
-              if (transcriptResponse.data && transcriptResponse.data.transcript) {
-                console.log('✅ Got transcript from Supadata API');
-                return transcriptResponse.data.transcript;
-              }
-            } catch (error) {
-              console.log('⚠️ Supadata API failed:', error.message);
-            }
-
-            try {
-              console.log('🔍 Trying alternative TikTok transcript methods...');
-              // Try alternative: Extract TikTok video ID and use unofficial APIs
-              const videoId = this.extractTikTokId(url);
-              if (videoId) {
-                // Try direct TikTok API endpoints (may require auth)
-                const directResponse = await axios.get(`https://www.tiktok.com/api/v1/videos/${videoId}/transcript`, {
-                  timeout: 5000,
-                  headers: {
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
-                  }
-                });
-                
-                if (directResponse.data && directResponse.data.text) {
-                  console.log('✅ Got transcript from direct TikTok API');
-                  return directResponse.data.text;
-                }
-              }
-            } catch (error) {
-              console.log('⚠️ Direct TikTok API failed:', error.message);
-            }
-
-            console.log('⚠️ No transcript APIs available - will use metadata analysis');
+            // Deprecated: handled by Masa only
             return null;
           }
 
           async getGenericVideoTranscript(url) {
-            // For future: other video platforms
-            console.log('🔍 Generic video transcript not implemented yet');
+            // Deprecated: handled by Masa only
             return null;
           }
 
           async extractAudioAndTranscribe(url) {
-            console.log('🎤 Starting audio extraction + Whisper transcription...');
-            
-            let audioFilePath = null;
-            try {
-              // Step 1: Extract audio file from TikTok
-              audioFilePath = await this.getTikTokAudioUrl(url);
-              if (!audioFilePath) {
-                console.log('❌ Could not extract audio from TikTok');
-                return null;
-              }
-
-              // Step 2: Transcribe with Whisper using local file
-              const transcript = await this.transcribeWithWhisper(audioFilePath);
-              console.log('✅ Whisper transcription completed');
-              return transcript;
-
-            } catch (error) {
-              console.error('❌ Audio extraction + transcription failed:', error);
-              return null;
-            } finally {
-              // Clean up audio file
-              if (audioFilePath && fs.existsSync(audioFilePath)) {
-                try {
-                  fs.unlinkSync(audioFilePath);
-                  console.log('🧹 Cleaned up audio file');
-                } catch (cleanupError) {
-                  console.warn('⚠️ Could not clean up audio file:', cleanupError.message);
-                }
-              }
-            }
-          }
-
-          async getTikTokAudioUrl(tiktokUrl) {
-            try {
-              console.log('🔗 Trying TikTok audio extraction APIs...');
-              
-              // Try Zyla's TikTok Audio Download API
-              try {
-                const audioResponse = await axios.post('https://zylalabs.com/api/tiktok-audio-download', {
-                  url: tiktokUrl
-                }, {
-                  headers: {
-                    'Content-Type': 'application/json',
-                    // Add API key if we get one: 'X-API-Key': process.env.ZYLA_API_KEY
-                  },
-                  timeout: 15000
-                });
-
-                if (audioResponse.data && audioResponse.data.audio_url) {
-                  console.log('✅ Got audio URL from Zyla API');
-                  return audioResponse.data.audio_url;
-                }
-              } catch (error) {
-                console.log('⚠️ Zyla API failed:', error.message);
-              }
-
-              // Try Apify's Universal Content Extractor
-              try {
-                const apifyResponse = await axios.post('https://api.apify.com/v2/acts/red.cars~universal-content-extractor/run-sync', {
-                  url: tiktokUrl,
-                  extract_audio: true
-                }, {
-                  headers: {
-                    'Content-Type': 'application/json',
-                    // Add API key if we get one: 'Authorization': `Bearer ${process.env.APIFY_API_KEY}`
-                  },
-                  timeout: 20000
-                });
-
-                if (apifyResponse.data && apifyResponse.data.audio_url) {
-                  console.log('✅ Got audio URL from Apify');
-                  return apifyResponse.data.audio_url;
-                }
-              } catch (error) {
-                console.log('⚠️ Apify API failed:', error.message);
-              }
-
-              console.log('⚠️ No audio extraction APIs available - transcripts will be used instead');
-              return null;
-              
-            } catch (error) {
-              console.log('⚠️ Audio extraction failed:', error.message);
-              return null;
-            }
+            // Deprecated: handled by Masa only
+            return null;
           }
 
           async downloadAudio(audioUrl) {
