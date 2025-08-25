@@ -27,5 +27,5 @@ const contentRoutes = require('./routes/content');
 app.use('/api', contentRoutes);
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Kova Backend Server running on port ${PORT}`);
 });
