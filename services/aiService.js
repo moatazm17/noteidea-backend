@@ -98,13 +98,13 @@ class AIService {
             - Pros and cons mentioned
             - Rating/recommendation
             
-            Return JSON with:
+            Return JSON only with exactly this shape (no extra text):
             {
-              "title": "Descriptive title based on content",
+              "title": "string",
               "category": "cooking|travel|tutorial|review|other",
-              "keyInfo": "Most important info extracted",
-              "details": ["Detail 1", "Detail 2", "Detail 3"],
-              "tags": ["relevant", "searchable", "tags"]
+              "keyInfo": "string",
+              "details": ["string"],
+              "tags": ["string"]
             }
             ` : realMetadata ? `
             Analyze TikTok for USEFUL INFORMATION:
@@ -114,40 +114,67 @@ class AIService {
             Based on title/author, predict what useful info this video contains.
             Don't be generic - think about what the USER wants to remember later.
             
-            Return JSON: {"title": "...", "category": "...", "keyInfo": "...", "details": ["..."], "tags": ["..."]}
+            Return JSON only:
+            {"title": "string", "category": "string", "keyInfo": "string", "details": ["string"], "tags": ["string"]}
             ` : `
             Analyze TikTok URL for potential content:
             URL: ${url}
             
             Based on URL pattern, predict content type and what info user might want.
             
-            Return JSON: {"title": "...", "category": "other", "keyInfo": "...", "details": ["..."], "tags": ["..."]}
+            Return JSON only:
+            {"title": "string", "category": "other", "keyInfo": "string", "details": ["string"], "tags": ["string"]}
             `;
 
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 250,
-        temperature: 0.3
-      });
-
-      const analysis = JSON.parse(response.choices[0].message.content);
-      console.log('🤖 OpenAI analysis completed for TikTok');
-      
-      return {
-        title: analysis.title || realMetadata?.title || 'TikTok Video',
-        description: analysis.keyInfo || analysis.description || 'Useful information extracted',
-        tags: analysis.tags || ['tiktok', 'video'],
-        thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url),
-        category: analysis.category || 'other',
-        details: analysis.details || [],
-        keyInfo: analysis.keyInfo || ''
+      const extractJson = (text) => {
+        if (!text) return null;
+        // Remove code fences if present
+        let t = text.trim().replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
+        // Try to locate the outermost JSON object
+        const start = t.indexOf('{');
+        const end = t.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          t = t.slice(start, end + 1);
+        }
+        try {
+          return JSON.parse(t);
+        } catch (e) {
+          // Last resort: remove trailing commas and retry
+          const cleaned = t.replace(/,\s*([}\]])/g, '$1');
+          try { return JSON.parse(cleaned); } catch { return null; }
+        }
       };
-    } catch (error) {
-      console.error('❌ OpenAI analysis failed for TikTok:', error);
-      return this.getEnhancedTikTokFallback(url, realMetadata);
-    }
+
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 250,
+          temperature: 0.2,
+          response_format: { type: "json_object" }
+        });
+
+        const raw = response.choices?.[0]?.message?.content || '';
+        const analysis = extractJson(raw) || {};
+        if (!analysis || Object.keys(analysis).length === 0) {
+          console.warn('⚠️ OpenAI returned non-JSON or empty analysis. Raw:', raw.slice(0, 500));
+        }
+
+        console.log('🤖 OpenAI analysis completed for TikTok');
+        
+        return {
+          title: analysis.title || realMetadata?.title || 'TikTok Video',
+          description: analysis.keyInfo || analysis.description || 'Useful information extracted',
+          tags: analysis.tags || ['tiktok', 'video'],
+          thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url),
+          category: analysis.category || 'other',
+          details: analysis.details || [],
+          keyInfo: analysis.keyInfo || ''
+        };
+      } catch (error) {
+        console.error('❌ OpenAI analysis failed for TikTok:', error);
+        return this.getEnhancedTikTokFallback(url, realMetadata);
+      }
   }
 
   async analyzeScreenshot(imageUrl) {
