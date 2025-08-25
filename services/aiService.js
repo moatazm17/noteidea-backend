@@ -340,7 +340,8 @@ class AIService {
         title: analysis.title || 'Screenshot',
         description: analysis.keyInfo || analysis.description || 'Information extracted from screenshot',
         tags: analysis.tags || ['screenshot', 'image'],
-        thumbnail: imageUrl,
+        // Prefer http-served image if available in URL (not data URL)
+        thumbnail: imageUrl.startsWith('http') ? imageUrl : '',
         category: analysis.category || 'other',
         details: analysis.details || [],
         keyInfo: analysis.keyInfo || ''
@@ -367,7 +368,7 @@ class AIService {
         title: 'Screenshot',
         description: `Screenshot saved (OCR failed: ${errorReason})`,
         tags: ['screenshot', 'image', 'saved'],
-        thumbnail: imageUrl,
+        thumbnail: imageUrl.startsWith('http') ? imageUrl : '',
         category: 'other',
         details: [`OCR analysis failed: ${errorReason}`, 'Try with a smaller, clearer image'],
         keyInfo: 'Screenshot saved successfully'

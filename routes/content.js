@@ -4,6 +4,8 @@ const Content = require('../models/Content');
 const aiService = require('../services/aiService');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
+// Simple in-memory image store for serving uploaded images (MVP)
+const IMAGE_STORE = new Map();
 
 // Configure Cloudinary
 cloudinary.config({
@@ -86,7 +88,8 @@ router.post('/save', async (req, res) => {
       title: extractBasicTitle(url),
       description: 'AI analysis in progress...',
       aiTags: [contentType], // Basic tag while processing
-      thumbnail: getPlaceholderThumbnail(contentType),
+      // Use image URL itself as thumbnail for screenshots/images, else placeholder
+      thumbnail: (contentType === 'screenshot' || contentType === 'image') ? url : getPlaceholderThumbnail(contentType),
       processingStatus: 'pending'
     });
     
@@ -325,7 +328,7 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       originalSize: req.file.size,
       mimeType: req.file.mimetype
     });
-    
+
     // Check if image is too large (>10MB original)
     if (req.file.size > 10 * 1024 * 1024) {
       return res.status(413).json({ 
@@ -333,18 +336,28 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
         error: 'Image too large. Please use images smaller than 10MB.' 
       });
     }
-    
-    // Convert image to base64 data URL for direct GPT-4 Vision analysis
-    // This avoids the need for external image hosting
+
+    // Store buffer in memory and return a fetchable URL so iOS AsyncImage can render it
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    IMAGE_STORE.set(id, { buffer: req.file.buffer, mimeType: req.file.mimetype || 'image/jpeg' });
+
+    // Determine absolute base URL behind proxy
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https');
+    const host = (req.headers['x-forwarded-host'] || req.get('host'));
+    const baseUrl = `${proto}://${host}`;
+    const httpImageUrl = `${baseUrl}/api/image/${id}`;
+
+    // Also provide data URL for AI analysis when needed
     const base64Image = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
     const dataUrl = `data:${mimeType};base64,${base64Image}`;
-    
-    console.log('✅ Image converted to data URL for AI analysis');
-    
+
+    console.log('✅ Image stored and accessible at', httpImageUrl);
+
     res.json({ 
       success: true, 
-      imageUrl: dataUrl,
+      imageUrl: httpImageUrl,
+      dataUrl,
       message: 'Image ready for AI analysis'
     });
   } catch (error) {
@@ -355,6 +368,18 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       details: error.message 
     });
   }
+});
+
+// Serve images by id (MVP - in-memory store)
+router.get('/image/:id', (req, res) => {
+  const id = req.params.id;
+  const entry = IMAGE_STORE.get(id);
+  if (!entry) {
+    return res.status(404).send('Not found');
+  }
+  res.setHeader('Content-Type', entry.mimeType || 'image/jpeg');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.send(entry.buffer);
 });
 
 module.exports = router;
