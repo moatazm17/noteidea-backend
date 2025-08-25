@@ -2,6 +2,21 @@ const express = require('express');
 const router = express.Router();
 const Content = require('../models/Content');
 const aiService = require('../services/aiService');
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'demo',
+  api_key: process.env.CLOUDINARY_API_KEY || 'demo',
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'demo'
+});
+
+// Configure multer for memory storage
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
 const { extractBasicTitle, detectContentType, getPlaceholderThumbnail } = require('../utils/urlUtils');
 
 // Get all content for a device
@@ -293,6 +308,38 @@ router.delete('/content/:deviceId/:contentId', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Image upload endpoint
+router.post('/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file provided' });
+    }
+
+    console.log('📸 Processing image upload...');
+    
+    // For now, convert image to base64 data URL for direct GPT-4 Vision analysis
+    // This avoids the need for external image hosting
+    const base64Image = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype || 'image/jpeg';
+    const dataUrl = `data:${mimeType};base64,${base64Image}`;
+    
+    console.log('✅ Image converted to data URL for AI analysis');
+    
+    res.json({ 
+      success: true, 
+      imageUrl: dataUrl,
+      message: 'Image ready for AI analysis'
+    });
+  } catch (error) {
+    console.error('❌ Image processing failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Image processing failed',
+      details: error.message 
+    });
   }
 });
 
