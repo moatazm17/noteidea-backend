@@ -5,6 +5,11 @@
  */
 function extractBasicTitle(url) {
   try {
+    // Data URL images
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      return 'Screenshot';
+    }
+
     const urlObj = new URL(url);
     
     // TikTok URLs
@@ -45,6 +50,11 @@ function extractBasicTitle(url) {
  */
 function detectContentType(url) {
   try {
+    // Handle data URL images early (no URL constructor!)
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      return 'screenshot';
+    }
+
     const urlObj = new URL(url);
     
     // Explicit platform detection first (so AI path can specialize)
@@ -65,6 +75,10 @@ function detectContentType(url) {
     
     return 'other';
   } catch (error) {
+    // If it's a data URL but parsing failed above, still classify as screenshot
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      return 'screenshot';
+    }
     return 'other';
   }
 }

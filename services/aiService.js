@@ -38,6 +38,10 @@ class AIService {
 
   async analyzeContent(url, contentType) {
     try {
+      // Force data URLs through screenshot analyzer to avoid huge prompts/logs
+      if (typeof url === 'string' && url.startsWith('data:image/')) {
+        contentType = 'screenshot';
+      }
       if (contentType === 'tiktok') {
         return await this.analyzeTikTokUrl(url);
       } else if (contentType === 'screenshot') {
@@ -222,7 +226,7 @@ class AIService {
   }
 
   async analyzeScreenshot(imageUrl) {
-    console.log('📸 Analyzing screenshot:', imageUrl.slice(0, 100) + '...');
+    console.log('📸 Analyzing screenshot: data:image/*;base64,[truncated]');
     
     // If OpenAI is not available, use fallback analysis
     if (!openai) {
@@ -372,8 +376,10 @@ class AIService {
   }
 
   async analyzeGenericUrl(url) {
+    // Never include full data URLs in the prompt
+    const safeUrl = (typeof url === 'string' && url.startsWith('data:image/')) ? 'data:image/*;base64,[truncated]' : url;
     const prompt = `
-    Analyze this URL and generate relevant tags: ${url}
+    Analyze this URL and generate relevant tags: ${safeUrl}
     
     Based on the domain and URL structure, generate:
     1. A descriptive title
@@ -389,7 +395,8 @@ class AIService {
       temperature: 0.3
     });
 
-    const analysis = JSON.parse(response.choices[0].message.content);
+    const raw = response.choices?.[0]?.message?.content || '{}';
+    const analysis = this.extractJson(raw) || {};
     
     return {
       title: analysis.title || this.extractTitleFromUrl(url),
