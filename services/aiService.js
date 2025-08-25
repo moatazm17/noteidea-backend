@@ -222,11 +222,37 @@ class AIService {
   }
 
   async analyzeScreenshot(imageUrl) {
-    console.log(`📸 Analyzing screenshot: ${imageUrl}`);
+    console.log('📸 Analyzing screenshot:', imageUrl.slice(0, 100) + '...');
     
     // If OpenAI is not available, use fallback analysis
     if (!openai) {
       return this.getFallbackAnalysis(imageUrl, 'screenshot');
+    }
+    
+    // Validate image format and size
+    if (!imageUrl.startsWith('data:image/')) {
+      console.error('❌ Invalid image format - must be data URL');
+      return this.getFallbackAnalysis(imageUrl, 'screenshot');
+    }
+    
+    // Check if it's a supported format
+    const supportedFormats = ['jpeg', 'jpg', 'png', 'gif', 'webp'];
+    const formatMatch = imageUrl.match(/data:image\/([^;]+)/);
+    const format = formatMatch ? formatMatch[1].toLowerCase() : 'unknown';
+    
+    // Estimate base64 size (rough check)
+    const base64Data = imageUrl.split(',')[1];
+    const sizeInBytes = (base64Data.length * 3) / 4;
+    const sizeInMB = sizeInBytes / (1024 * 1024);
+    
+    console.log(`📊 Image info: format=${format}, size=${sizeInMB.toFixed(2)}MB`);
+    
+    if (!supportedFormats.includes(format)) {
+      console.warn(`⚠️ Unsupported image format: ${format}`);
+    }
+    
+    if (sizeInMB > 20) {
+      console.warn(`⚠️ Large image detected: ${sizeInMB.toFixed(2)}MB - may cause issues`);
     }
     
     const prompt = `
@@ -302,7 +328,31 @@ class AIService {
       };
     } catch (error) {
       console.error('❌ GPT-4 Vision analysis failed:', error);
-      return this.getFallbackAnalysis(imageUrl, 'screenshot');
+      
+      // Better error handling with specific error messages
+      let errorReason = 'Unknown error';
+      if (error.code === 'image_parse_error') {
+        errorReason = 'Image format not supported or corrupted';
+      } else if (error.status === 400) {
+        errorReason = 'Invalid image data';
+      } else if (error.status === 413) {
+        errorReason = 'Image too large';
+      } else if (error.message?.includes('unsupported')) {
+        errorReason = 'Unsupported image format';
+      }
+      
+      console.log(`🔧 Using fallback analysis due to: ${errorReason}`);
+      
+      // Enhanced fallback for images
+      return {
+        title: 'Screenshot',
+        description: `Screenshot saved (OCR failed: ${errorReason})`,
+        tags: ['screenshot', 'image', 'saved'],
+        thumbnail: imageUrl,
+        category: 'other',
+        details: [`OCR analysis failed: ${errorReason}`, 'Try with a smaller, clearer image'],
+        keyInfo: 'Screenshot saved successfully'
+      };
     }
   }
 
