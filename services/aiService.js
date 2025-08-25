@@ -63,62 +63,61 @@ class AIService {
               console.warn('⚠️  Transcript fetch failed:', error.message);
             }
 
-            // Use OpenAI with REAL content analysis
+            // Use OpenAI to extract STRUCTURED DATA
             const prompt = transcript ? `
-            Analyze this TikTok video with REAL content:
+            Extract USEFUL INFORMATION from this TikTok video transcript:
             
             Title: "${realMetadata?.title || 'Unknown'}"
             Author: ${realMetadata?.author || 'Unknown'}
-            Video Transcript: "${transcript}"
+            Transcript: "${transcript}"
             
-            Based on the ACTUAL spoken content in the transcript, determine:
-            1. What is the person actually saying/doing?
-            2. Is this a lip-sync, dance, cooking, comedy, tutorial, or something else?
-            3. What are the key topics mentioned in the speech?
+            YOUR JOB: Extract actionable information so the user doesn't need to watch the video again.
             
-            Generate accurate analysis:
-            - Title: Describe what's ACTUALLY happening (max 60 chars)
-            - Tags: Based on spoken content and actions (5-8 tags)
-            - Description: Summarize the actual content (not assumptions)
+            If it's a COOKING video, extract:
+            - Recipe name, ingredients, cooking time, cost
+            - Steps in order
+            - Tips mentioned
             
-            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+            If it's a TRAVEL video, extract:
+            - Destination, prices mentioned, airlines, hotels
+            - Best time to visit, tips
+            - Specific places/attractions mentioned
+            
+            If it's a TUTORIAL/DIY, extract:
+            - What they're making/teaching
+            - Materials needed
+            - Step-by-step process
+            - Time required
+            
+            If it's PRODUCT REVIEW, extract:
+            - Product name, price, where to buy
+            - Pros and cons mentioned
+            - Rating/recommendation
+            
+            Return JSON with:
+            {
+              "title": "Descriptive title based on content",
+              "category": "cooking|travel|tutorial|review|other",
+              "keyInfo": "Most important info extracted",
+              "details": ["Detail 1", "Detail 2", "Detail 3"],
+              "tags": ["relevant", "searchable", "tags"]
+            }
             ` : realMetadata ? `
-            CREATE A SMART TITLE from this TikTok metadata:
+            Analyze TikTok for USEFUL INFORMATION:
             Title: "${realMetadata.title || 'Unknown'}"
             Author: ${realMetadata.author || 'Unknown'}
+            
+            Based on title/author, predict what useful info this video contains.
+            Don't be generic - think about what the USER wants to remember later.
+            
+            Return JSON: {"title": "...", "category": "...", "keyInfo": "...", "details": ["..."], "tags": ["..."]}
+            ` : `
+            Analyze TikTok URL for potential content:
             URL: ${url}
             
-            RULES:
-            1. NEVER just say "TikTok Video" or "Fun Times" - that's LAZY
-            2. If title mentions cooking/food → create cooking-focused title
-            3. If it's a person's name → guess what they're doing based on their content style
-            4. If unclear → be creative but specific
-            5. Make it ENGAGING and CLICKABLE
+            Based on URL pattern, predict content type and what info user might want.
             
-            EXAMPLES:
-            - "Celine Ko Lip Sync Performance" 
-            - "Gordon Ramsay's Quick Cooking Tip"
-            - "Dance Challenge Compilation"
-            - "DIY Home Decor Hack"
-            
-            Generate:
-            - Title: Creative, specific, engaging (max 60 chars)
-            - Tags: Relevant to likely content (5-8 tags)
-            - Description: What viewer would expect to see
-            
-            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
-            ` : `
-            Create content from this TikTok URL: ${url}
-            
-            Extract creator from URL and make SMART guesses:
-            - If @gordonramsay → cooking content
-            - If @dance* → dance content  
-            - If @comedy* → funny content
-            - If @beauty* → makeup/style
-            
-            Be CREATIVE but LOGICAL. No generic "TikTok Video" bullshit.
-            
-            Return JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+            Return JSON: {"title": "...", "category": "other", "keyInfo": "...", "details": ["..."], "tags": ["..."]}
             `;
 
     try {
@@ -134,9 +133,12 @@ class AIService {
       
       return {
         title: analysis.title || realMetadata?.title || 'TikTok Video',
-        description: analysis.description || realMetadata?.description || '',
-        tags: analysis.tags || ['tiktok', 'video', 'viral'],
-        thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url)
+        description: analysis.keyInfo || analysis.description || 'Useful information extracted',
+        tags: analysis.tags || ['tiktok', 'video'],
+        thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url),
+        category: analysis.category || 'other',
+        details: analysis.details || [],
+        keyInfo: analysis.keyInfo || ''
       };
     } catch (error) {
       console.error('❌ OpenAI analysis failed for TikTok:', error);
@@ -145,42 +147,87 @@ class AIService {
   }
 
   async analyzeScreenshot(imageUrl) {
+    console.log(`📸 Analyzing screenshot: ${imageUrl}`);
+    
     // If OpenAI is not available, use fallback analysis
     if (!openai) {
       return this.getFallbackAnalysis(imageUrl, 'screenshot');
     }
     
-    // For screenshots, we'd typically use OCR + image analysis
-    // For MVP, we'll simulate this with URL-based analysis
-    
     const prompt = `
-    Analyze this screenshot URL: ${imageUrl}
+    Extract USEFUL INFORMATION from this screenshot image.
     
-    Generate relevant tags for a screenshot that might contain:
-    - Text content (receipts, messages, notes)
-    - Social media posts
-    - Memes or funny content
-    - Product pages or shopping
-    - Important information
+    YOUR JOB: Read all text and extract actionable data so the user doesn't need to look at the image again.
     
-    Return as JSON: {"title": "...", "tags": ["tag1", "tag2"], "description": "..."}
+    Common screenshot types and what to extract:
+    
+    FLIGHT/TRAVEL:
+    - Flight details: route, dates, prices, airline
+    - Hotel bookings: name, dates, price, location
+    - Travel deals or recommendations
+    
+    RECEIPTS/SHOPPING:
+    - Store name, total amount, date
+    - Items purchased and prices
+    - Discounts or deals applied
+    
+    RESTAURANT/MENU:
+    - Restaurant name, menu items, prices
+    - Special offers or recommendations
+    - Location or contact info
+    
+    SOCIAL MEDIA POSTS:
+    - Key information or quotes
+    - Product recommendations
+    - Useful tips or advice mentioned
+    
+    MESSAGES/NOTES:
+    - Important information shared
+    - Addresses, phone numbers, links
+    - To-do items or reminders
+    
+    Return JSON:
+    {
+      "title": "Descriptive title of what this screenshot contains",
+      "category": "flight|receipt|menu|social|message|other",
+      "keyInfo": "Most important information extracted",
+      "details": ["Specific detail 1", "Detail 2", "Detail 3"],
+      "tags": ["searchable", "keywords"]
+    }
     `;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 150,
-      temperature: 0.3
-    });
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4-vision-preview",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: imageUrl } }
+            ]
+          }
+        ],
+        max_tokens: 300,
+        temperature: 0.3
+      });
 
-    const analysis = JSON.parse(response.choices[0].message.content);
-    
-    return {
-      title: analysis.title || 'Screenshot',
-      description: analysis.description || '',
-      tags: analysis.tags || ['screenshot', 'image'],
-      thumbnail: imageUrl
-    };
+      const analysis = JSON.parse(response.choices[0].message.content);
+      console.log('🤖 GPT-4 Vision analysis completed for screenshot');
+      
+      return {
+        title: analysis.title || 'Screenshot',
+        description: analysis.keyInfo || analysis.description || 'Information extracted from screenshot',
+        tags: analysis.tags || ['screenshot', 'image'],
+        thumbnail: imageUrl,
+        category: analysis.category || 'other',
+        details: analysis.details || [],
+        keyInfo: analysis.keyInfo || ''
+      };
+    } catch (error) {
+      console.error('❌ GPT-4 Vision analysis failed:', error);
+      return this.getFallbackAnalysis(imageUrl, 'screenshot');
+    }
   }
 
   async analyzeGenericUrl(url) {
