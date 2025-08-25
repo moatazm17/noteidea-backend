@@ -647,6 +647,7 @@ class AIService {
 
               // Potential result endpoints
               const makeGetUrls = [
+                (id) => `https://data.masa.ai/api/v1/search/live/tiktok/result/${id}`, // prioritize exact endpoint
                 (id) => `https://data.masa.ai/api/v1/search/results/${id}`,
                 (id) => `https://data.masa.ai/api/v1/search/result/${id}`,
                 (id) => `https://data.masa.ai/api/v1/search/${id}`,
