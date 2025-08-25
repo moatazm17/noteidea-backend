@@ -69,87 +69,84 @@ class AIService {
 
             // Use OpenAI to extract STRUCTURED DATA
             const prompt = transcript ? `
-            Extract USEFUL INFORMATION from this TikTok video transcript:
-            
-            Title: "${realMetadata?.title || 'Unknown'}"
-            Author: ${realMetadata?.author || 'Unknown'}
-            Transcript: "${transcript}"
-            
-            YOUR JOB: Extract actionable information so the user doesn't need to watch the video again.
-            
-            If it's a COOKING video, extract:
-            - Recipe name, ingredients, cooking time, cost
-            - Steps in order
-            - Tips mentioned
-            
-            If it's a TRAVEL video, extract:
-            - Destination, prices mentioned, airlines, hotels
-            - Best time to visit, tips
-            - Specific places/attractions mentioned
-            
-            If it's a TUTORIAL/DIY, extract:
-            - What they're making/teaching
-            - Materials needed
-            - Step-by-step process
-            - Time required
-            
-            If it's PRODUCT REVIEW, extract:
-            - Product name, price, where to buy
-            - Pros and cons mentioned
-            - Rating/recommendation
-            
-            Return JSON only with exactly this shape (no extra text):
+            Extract USEFUL INFORMATION from this TikTok video transcript.
+            Return ONLY valid JSON with this exact schema (no extra commentary):
             {
               "title": "string",
               "category": "cooking|travel|tutorial|review|other",
               "keyInfo": "string",
               "details": ["string"],
-              "tags": ["string"]
+              "tags": ["string"],
+              "recipeName": "string",
+              "ingredients": ["string"],
+              "steps": ["string"],
+              "timeMinutes": "number|""",
+              "cost": "string"
             }
+
+            Context:
+            Title: "${realMetadata?.title || 'Unknown'}"
+            Author: ${realMetadata?.author || 'Unknown'}
+            Transcript: "${transcript}"
+
+            Notes:
+            - If not cooking, fill generic fields (title/category/keyInfo/details/tags) and leave recipe fields empty.
+            - tags must be short, lowercase, searchable (e.g., "pasta", "red-sauce", "vegan").
             ` : realMetadata ? `
-            Analyze TikTok for USEFUL INFORMATION:
-            Title: "${realMetadata.title || 'Unknown'}"
-            Author: ${realMetadata.author || 'Unknown'}
-            
-            Based on title/author, predict what useful info this video contains.
-            Don't be generic - think about what the USER wants to remember later.
-            
-            Return JSON only:
-            {"title": "string", "category": "string", "keyInfo": "string", "details": ["string"], "tags": ["string"]}
+            Based on the metadata below, predict useful info. Return ONLY JSON with schema:
+            {"title":"string","category":"string","keyInfo":"string","details":["string"],"tags":["string"]}
+            Metadata Title: "${realMetadata.title || 'Unknown'}" Author: ${realMetadata.author || 'Unknown'}
             ` : `
-            Analyze TikTok URL for potential content:
+            Analyze URL and return ONLY JSON: {"title":"string","category":"other","keyInfo":"string","details":["string"],"tags":["string"]}
             URL: ${url}
-            
-            Based on URL pattern, predict content type and what info user might want.
-            
-            Return JSON only:
-            {"title": "string", "category": "other", "keyInfo": "string", "details": ["string"], "tags": ["string"]}
             `;
 
       const extractJson = (text) => {
         if (!text) return null;
-        // Remove code fences if present
         let t = text.trim().replace(/^```(json)?/i, '').replace(/```$/i, '').trim();
-        // Try to locate the outermost JSON object
         const start = t.indexOf('{');
         const end = t.lastIndexOf('}');
-        if (start !== -1 && end !== -1 && end > start) {
-          t = t.slice(start, end + 1);
-        }
-        try {
-          return JSON.parse(t);
-        } catch (e) {
-          // Last resort: remove trailing commas and retry
+        if (start !== -1 && end !== -1 && end > start) t = t.slice(start, end + 1);
+        try { return JSON.parse(t); } catch {
           const cleaned = t.replace(/,\s*([}\]])/g, '$1');
           try { return JSON.parse(cleaned); } catch { return null; }
         }
+      };
+
+      const buildSummary = (analysis) => {
+        // Cooking-specific pretty summary
+        if ((analysis.category || '').toLowerCase() === 'cooking' || (analysis.ingredients && analysis.ingredients.length)) {
+          const lines = [];
+          const rn = analysis.recipeName || analysis.title || realMetadata?.title || 'Recipe';
+          lines.push(`Recipe name: ${rn}`);
+          if (analysis.ingredients?.length) {
+            lines.push('Ingredients:');
+            analysis.ingredients.slice(0, 20).forEach(i => lines.push(`- ${i}`));
+          }
+          if (analysis.steps?.length) {
+            lines.push('Steps:');
+            analysis.steps.slice(0, 12).forEach((s, idx) => lines.push(`${idx + 1}. ${s}`));
+          }
+          const extras = [];
+          if (analysis.timeMinutes) extras.push(`Cooking time: ${analysis.timeMinutes} minutes`);
+          if (analysis.cost) extras.push(`Cost: ${analysis.cost}`);
+          if (extras.length) lines.push(extras.join(' | '));
+          return lines.join('\n');
+        }
+        // Generic
+        const lines = [];
+        if (analysis.keyInfo) lines.push(analysis.keyInfo);
+        if (Array.isArray(analysis.details) && analysis.details.length) {
+          analysis.details.slice(0, 5).forEach(d => lines.push(`- ${d}`));
+        }
+        return lines.join('\n');
       };
 
       try {
         const response = await openai.chat.completions.create({
           model: "gpt-3.5-turbo",
           messages: [{ role: "user", content: prompt }],
-          max_tokens: 250,
+          max_tokens: 400,
           temperature: 0.2,
           response_format: { type: "json_object" }
         });
@@ -160,12 +157,25 @@ class AIService {
           console.warn('⚠️ OpenAI returned non-JSON or empty analysis. Raw:', raw.slice(0, 500));
         }
 
+        // Enrich tags (merge with ingredients keywords)
+        const extraTags = [];
+        if (Array.isArray(analysis.ingredients)) {
+          analysis.ingredients.slice(0, 5).forEach(i => {
+            const k = String(i).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0];
+            if (k && k.length > 2) extraTags.push(k);
+          });
+        }
+        if (analysis.timeMinutes) extraTags.push('time-'+String(analysis.timeMinutes));
+        const tags = Array.from(new Set([...(analysis.tags||[]), ...extraTags])).slice(0, 10);
+
+        const prettySummary = buildSummary(analysis);
+
         console.log('🤖 OpenAI analysis completed for TikTok');
         
         return {
-          title: analysis.title || realMetadata?.title || 'TikTok Video',
-          description: analysis.keyInfo || analysis.description || 'Useful information extracted',
-          tags: analysis.tags || ['tiktok', 'video'],
+          title: analysis.title || analysis.recipeName || realMetadata?.title || 'TikTok Video',
+          description: prettySummary || analysis.keyInfo || analysis.description || 'Useful information extracted',
+          tags,
           thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url),
           category: analysis.category || 'other',
           details: analysis.details || [],
