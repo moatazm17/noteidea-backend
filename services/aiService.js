@@ -626,13 +626,13 @@ class AIService {
                     'Authorization': `Bearer ${process.env.MASA_API_KEY}`,
                     'Content-Type': 'application/json'
                   },
-                  timeout: 60000
+                  timeout: 30000
                 }
               );
 
               // Immediate transcript cases
               if (resp.data) {
-                if (typeof resp.data === 'string') return resp.data;
+                if (typeof resp.data === 'string' && resp.data.trim()) return resp.data;
                 if (resp.data.transcript) return resp.data.transcript;
                 if (resp.data.result?.transcript) return resp.data.result.transcript;
               }
@@ -645,58 +645,90 @@ class AIService {
 
               console.log('🔄 Masa job started, polling for transcript...', jobUuid);
 
-              // Potential result endpoints (without official docs, try common patterns)
-              const endpoints = [
+              // Potential result endpoints
+              const makeGetUrls = [
                 (id) => `https://data.masa.ai/api/v1/search/results/${id}`,
                 (id) => `https://data.masa.ai/api/v1/search/result/${id}`,
-                (id) => `https://data.masa.ai/api/v1/jobs/${id}`,
+                (id) => `https://data.masa.ai/api/v1/search/${id}`,
                 (id) => `https://data.masa.ai/api/v1/search/live/tiktok/${id}`,
-                (id) => `https://data.masa.ai/api/v1/search/${id}`
+                (id) => `https://data.masa.ai/api/v1/jobs/${id}`
               ];
 
-              const headers = { 'Authorization': `Bearer ${process.env.MASA_API_KEY}` };
+              const postEndpoints = [
+                'https://data.masa.ai/api/v1/search/result',
+                'https://data.masa.ai/api/v1/search/results',
+                'https://data.masa.ai/api/v1/search/status'
+              ];
+
+              const headers = { 'Authorization': `Bearer ${process.env.MASA_API_KEY}`, 'Content-Type': 'application/json' };
 
               const startedAt = Date.now();
-              const timeoutMs = 90000; // 90s
+              const timeoutMs = 180000; // 3 minutes
+              let attempt = 0;
+
+              const parseTranscript = (d) => {
+                const candidates = [
+                  d,
+                  d?.data,
+                  d?.result,
+                  d?.results,
+                  d?.payload,
+                  d?.output,
+                  d?.response
+                ];
+                for (const c of candidates) {
+                  if (!c) continue;
+                  if (typeof c === 'string' && c.trim()) return c;
+                  if (Array.isArray(c) && c.length) {
+                    if (typeof c[0] === 'string') return c.join(' ');
+                    // Try segments arrays
+                    if (c[0]?.text) return c.map(s => s.text).join(' ');
+                  }
+                  if (c.transcript) return c.transcript;
+                  if (c.text) return c.text;
+                  if (c.segments && Array.isArray(c.segments)) {
+                    return c.segments.map(s => s.text || s.caption || '').filter(Boolean).join(' ');
+                  }
+                  if (c.caption) return c.caption;
+                }
+                return null;
+              };
 
               while (Date.now() - startedAt < timeoutMs) {
-                for (const makeUrl of endpoints) {
+                attempt += 1;
+
+                // Try GET endpoints
+                for (const makeUrl of makeGetUrls) {
                   try {
                     const url = makeUrl(jobUuid);
                     const r = await axios.get(url, { headers, timeout: 10000 });
-                    const d = r.data;
-
-                    // Common shapes to check
-                    const candidates = [
-                      d,
-                      d?.data,
-                      d?.result,
-                      d?.results,
-                      d?.payload
-                    ];
-
-                    for (const c of candidates) {
-                      if (!c) continue;
-                      if (typeof c === 'string' && c.trim()) return c;
-                      if (c.transcript) return c.transcript;
-                      if (c.text) return c.text;
-                      if (Array.isArray(c) && c.length && typeof c[0] === 'string') return c.join(' ');
+                    const transcript = parseTranscript(r.data);
+                    if (transcript && transcript.trim()) {
+                      console.log('✅ Masa transcript ready (GET)');
+                      return transcript;
                     }
-
-                    // Status fields
-                    const status = d?.status || d?.state;
-                    if (status === 'failed' || status === 'error') {
-                      console.log('❌ Masa job reported failure');
-                      return null;
-                    }
-
-                  } catch (pollErr) {
-                    // Ignore and try next endpoint/loop
+                  } catch (_) {
+                    // ignore and continue
                   }
                 }
 
-                // Wait before next poll
-                await new Promise(res => setTimeout(res, 5000));
+                // Try POST endpoints with uuid
+                for (const url of postEndpoints) {
+                  try {
+                    const r = await axios.post(url, { uuid: jobUuid }, { headers, timeout: 10000 });
+                    const transcript = parseTranscript(r.data);
+                    if (transcript && transcript.trim()) {
+                      console.log('✅ Masa transcript ready (POST)');
+                      return transcript;
+                    }
+                  } catch (_) {
+                    // ignore and continue
+                  }
+                }
+
+                // Small delay; increase slightly over time (cap at 5s)
+                const delay = Math.min(1000 + attempt * 250, 5000);
+                await new Promise(res => setTimeout(res, delay));
               }
 
               console.log('⌛️ Masa polling timed out');
