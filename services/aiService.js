@@ -234,9 +234,19 @@ class AIService {
       return this.getFallbackAnalysis(imageUrl, 'screenshot');
     }
     
-    // Validate image format and size
-    if (!imageUrl.startsWith('data:image/')) {
-      console.error('❌ Invalid image format - must be data URL');
+    // Ensure we have a data URL for the model. If we received an HTTP URL, download and convert.
+    if (typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      try {
+        const resp = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 20000 });
+        const mimeType = resp.headers['content-type'] || 'image/jpeg';
+        const base64 = Buffer.from(resp.data).toString('base64');
+        imageUrl = `data:${mimeType};base64,${base64}`;
+      } catch (err) {
+        console.error('❌ Failed to fetch image for OCR:', err.message || err);
+        return this.getFallbackAnalysis(imageUrl, 'screenshot');
+      }
+    } else if (!imageUrl.startsWith('data:image/')) {
+      console.error('❌ Invalid image format - must be data URL or HTTP image');
       return this.getFallbackAnalysis(imageUrl, 'screenshot');
     }
     
