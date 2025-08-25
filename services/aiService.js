@@ -226,6 +226,7 @@ class AIService {
     
     // If OpenAI is not available, use fallback analysis
     if (!openai) {
+      console.log('⚠️ OpenAI not available, using fallback');
       return this.getFallbackAnalysis(imageUrl, 'screenshot');
     }
     
@@ -245,15 +246,17 @@ class AIService {
     const sizeInBytes = (base64Data.length * 3) / 4;
     const sizeInMB = sizeInBytes / (1024 * 1024);
     
-    console.log(`📊 Image info: format=${format}, size=${sizeInMB.toFixed(2)}MB`);
+    console.log(`📊 Image validation: format=${format}, size=${sizeInMB.toFixed(2)}MB`);
     
     if (!supportedFormats.includes(format)) {
-      console.warn(`⚠️ Unsupported image format: ${format}`);
+      console.warn(`⚠️ Unsupported image format: ${format}, proceeding anyway`);
     }
     
     if (sizeInMB > 20) {
       console.warn(`⚠️ Large image detected: ${sizeInMB.toFixed(2)}MB - may cause issues`);
     }
+    
+    console.log('🤖 Starting GPT-4o Vision API call...');
     
     const prompt = `
     Extract USEFUL INFORMATION from this screenshot image.
@@ -298,7 +301,14 @@ class AIService {
     `;
 
     try {
-      const response = await openai.chat.completions.create({
+      console.log('📡 Making OpenAI API request with GPT-4o...');
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('OpenAI API timeout after 60 seconds')), 60000);
+      });
+      
+      const apiPromise = openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
@@ -314,6 +324,11 @@ class AIService {
         response_format: { type: "json_object" }
       });
 
+      const response = await Promise.race([apiPromise, timeoutPromise]);
+      
+      console.log('✅ OpenAI API response received');
+      console.log('🔍 Parsing JSON response...');
+      
       const analysis = this.extractJson(response.choices[0].message.content);
       console.log('🤖 GPT-4 Vision analysis completed for screenshot');
       
