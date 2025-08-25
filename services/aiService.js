@@ -4,7 +4,6 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
-const YTDlpWrap = require('yt-dlp-wrap').default;
 
 // Debug OpenAI setup
 console.log('🔑 OpenAI API Key Status:', process.env.OPENAI_API_KEY ? 'FOUND' : 'MISSING');
@@ -636,10 +635,53 @@ class AIService {
             return null; // All APIs failed
           }
 
-          async getTikTokDirectTranscript(videoId) {
-            // Try to get TikTok's built-in captions/transcript if available
-            console.log('🔍 Checking for TikTok captions...');
-            return null; // Most TikToks don't have accessible transcripts
+          async getTikTokDirectTranscript(url) {
+            try {
+              console.log('🔍 Trying Supadata TikTok Transcript API...');
+              
+              // Try Supadata API for TikTok transcripts
+              const transcriptResponse = await axios.post('https://api.supadata.ai/v1/tiktok/transcript', {
+                url: url
+              }, {
+                headers: {
+                  'Content-Type': 'application/json',
+                  // Add API key if we get one: 'Authorization': `Bearer ${process.env.SUPADATA_API_KEY}`
+                },
+                timeout: 10000
+              });
+
+              if (transcriptResponse.data && transcriptResponse.data.transcript) {
+                console.log('✅ Got transcript from Supadata API');
+                return transcriptResponse.data.transcript;
+              }
+            } catch (error) {
+              console.log('⚠️ Supadata API failed:', error.message);
+            }
+
+            try {
+              console.log('🔍 Trying alternative TikTok transcript methods...');
+              // Try alternative: Extract TikTok video ID and use unofficial APIs
+              const videoId = this.extractTikTokId(url);
+              if (videoId) {
+                // Try direct TikTok API endpoints (may require auth)
+                const directResponse = await axios.get(`https://www.tiktok.com/api/v1/videos/${videoId}/transcript`, {
+                  timeout: 5000,
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
+                  }
+                });
+                
+                if (directResponse.data && directResponse.data.text) {
+                  console.log('✅ Got transcript from direct TikTok API');
+                  return directResponse.data.text;
+                }
+              }
+            } catch (error) {
+              console.log('⚠️ Direct TikTok API failed:', error.message);
+            }
+
+            console.log('⚠️ No transcript APIs available - will use metadata analysis');
+            return null;
           }
 
           async getGenericVideoTranscript(url) {
@@ -683,48 +725,54 @@ class AIService {
 
           async getTikTokAudioUrl(tiktokUrl) {
             try {
-              console.log('🔗 Attempting TikTok audio extraction with yt-dlp...');
+              console.log('🔗 Trying TikTok audio extraction APIs...');
               
-              // Create temporary directory for audio files
-              const tempDir = path.join('/tmp', 'kova-audio');
-              if (!fs.existsSync(tempDir)) {
-                fs.mkdirSync(tempDir, { recursive: true });
+              // Try Zyla's TikTok Audio Download API
+              try {
+                const audioResponse = await axios.post('https://zylalabs.com/api/tiktok-audio-download', {
+                  url: tiktokUrl
+                }, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    // Add API key if we get one: 'X-API-Key': process.env.ZYLA_API_KEY
+                  },
+                  timeout: 15000
+                });
+
+                if (audioResponse.data && audioResponse.data.audio_url) {
+                  console.log('✅ Got audio URL from Zyla API');
+                  return audioResponse.data.audio_url;
+                }
+              } catch (error) {
+                console.log('⚠️ Zyla API failed:', error.message);
               }
 
-              // Use yt-dlp to extract audio with retry options
-              const ytDlp = new YTDlpWrap();
-              const outputPath = path.join(tempDir, `${Date.now()}.%(ext)s`);
-              
-              // Try with various yt-dlp options for TikTok
-              const ytDlpOptions = [
-                tiktokUrl,
-                '--extract-audio',
-                '--audio-format', 'mp3',
-                '--output', outputPath,
-                '--no-playlist',
-                '--retries', '3',
-                '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15',
-                '--referer', 'https://www.tiktok.com/'
-              ];
+              // Try Apify's Universal Content Extractor
+              try {
+                const apifyResponse = await axios.post('https://api.apify.com/v2/acts/red.cars~universal-content-extractor/run-sync', {
+                  url: tiktokUrl,
+                  extract_audio: true
+                }, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    // Add API key if we get one: 'Authorization': `Bearer ${process.env.APIFY_API_KEY}`
+                  },
+                  timeout: 20000
+                });
 
-              await ytDlp.exec(ytDlpOptions);
-
-              // Find the generated audio file
-              const files = fs.readdirSync(tempDir);
-              const audioFile = files.find(file => file.endsWith('.mp3'));
-              
-              if (audioFile) {
-                const fullPath = path.join(tempDir, audioFile);
-                console.log('✅ Audio extracted successfully');
-                return fullPath;
+                if (apifyResponse.data && apifyResponse.data.audio_url) {
+                  console.log('✅ Got audio URL from Apify');
+                  return apifyResponse.data.audio_url;
+                }
+              } catch (error) {
+                console.log('⚠️ Apify API failed:', error.message);
               }
 
-              console.log('⚠️ No audio file generated by yt-dlp');
+              console.log('⚠️ No audio extraction APIs available - transcripts will be used instead');
               return null;
               
             } catch (error) {
-              // TikTok blocking is common - graceful fallback
-              console.log('⚠️ TikTok audio extraction blocked (expected) - using metadata analysis');
+              console.log('⚠️ Audio extraction failed:', error.message);
               return null;
             }
           }
