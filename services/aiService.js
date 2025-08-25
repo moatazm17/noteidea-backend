@@ -667,6 +667,14 @@ class AIService {
               let attempt = 0;
 
               const parseTranscript = (d) => {
+                // Direct array of results
+                if (Array.isArray(d) && d.length) {
+                  // Common Masa shape: [{ id, source, content, metadata: {...} }]
+                  if (d[0]?.content && typeof d[0].content === 'string') {
+                    return d.map(x => x.content).join(' ').trim();
+                  }
+                }
+
                 const candidates = [
                   d,
                   d?.data,
@@ -678,18 +686,21 @@ class AIService {
                 ];
                 for (const c of candidates) {
                   if (!c) continue;
-                  if (typeof c === 'string' && c.trim()) return c;
+
+                  // Array candidates nested under known keys
                   if (Array.isArray(c) && c.length) {
-                    if (typeof c[0] === 'string') return c.join(' ');
-                    // Try segments arrays
-                    if (c[0]?.text) return c.map(s => s.text).join(' ');
+                    if (typeof c[0] === 'string') return c.join(' ').trim();
+                    if (c[0]?.content) return c.map(s => s.content).join(' ').trim();
+                    if (c[0]?.text) return c.map(s => s.text).join(' ').trim();
                   }
-                  if (c.transcript) return c.transcript;
-                  if (c.text) return c.text;
+
+                  if (typeof c === 'string' && c.trim()) return c.trim();
+                  if (c.transcript) return String(c.transcript).trim();
+                  if (c.text) return String(c.text).trim();
                   if (c.segments && Array.isArray(c.segments)) {
-                    return c.segments.map(s => s.text || s.caption || '').filter(Boolean).join(' ');
+                    return c.segments.map(s => s.text || s.caption || '').filter(Boolean).join(' ').trim();
                   }
-                  if (c.caption) return c.caption;
+                  if (c.caption) return String(c.caption).trim();
                 }
                 return null;
               };
