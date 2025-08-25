@@ -662,6 +662,12 @@ class AIService {
               ];
 
               const headers = { 'Authorization': `Bearer ${process.env.MASA_API_KEY}`, 'Content-Type': 'application/json' };
+              const getHeaders = { 
+                'Authorization': `Bearer ${process.env.MASA_API_KEY}`,
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+              };
 
               const startedAt = Date.now();
               const timeoutMs = 180000; // 3 minutes
@@ -713,7 +719,7 @@ class AIService {
                 for (const makeUrl of makeGetUrls) {
                   try {
                     const url = makeUrl(jobUuid);
-                    const r = await axios.get(url, { headers, timeout: 10000 });
+                    const r = await axios.get(url, { headers: getHeaders, timeout: 10000 });
                     const transcript = parseTranscript(r.data);
                     if (transcript && transcript.trim()) {
                       console.log('✅ Masa transcript ready (GET)');
