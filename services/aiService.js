@@ -275,10 +275,11 @@ class AIService {
           }
         ],
         max_tokens: 300,
-        temperature: 0.3
+        temperature: 0.3,
+        response_format: { type: "json_object" }
       });
 
-      const analysis = JSON.parse(response.choices[0].message.content);
+      const analysis = extractJson(response.choices[0].message.content);
       console.log('🤖 GPT-4 Vision analysis completed for screenshot');
       
       return {
