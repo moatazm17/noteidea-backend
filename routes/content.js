@@ -3,16 +3,10 @@ const router = express.Router();
 const Content = require('../models/Content');
 const aiService = require('../services/aiService');
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
 // Simple in-memory image store for serving uploaded images (MVP)
 const IMAGE_STORE = new Map();
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'demo',
-  api_key: process.env.CLOUDINARY_API_KEY || 'demo',
-  api_secret: process.env.CLOUDINARY_API_SECRET || 'demo'
-});
+// (Cloudinary removed for MVP)
 
 // Configure multer for memory storage
 const upload = multer({ 

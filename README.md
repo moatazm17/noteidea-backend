@@ -1,3 +1,9 @@
+Runtime
+- Node: 18.x
+- Start: npm start
+
+Notes
+- Removed heavy unused deps to speed Railway deploys.
 # Kova Backend API
 
 AI-powered content saving and search API for Kova mobile app.
