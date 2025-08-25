@@ -15,7 +15,10 @@ cloudinary.config({
 // Configure multer for memory storage
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+  limits: { 
+    fileSize: 50 * 1024 * 1024, // 50MB limit
+    fieldSize: 50 * 1024 * 1024 // 50MB field size limit
+  }
 });
 const { extractBasicTitle, detectContentType, getPlaceholderThumbnail } = require('../utils/urlUtils');
 
@@ -318,9 +321,20 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
 
-    console.log('📸 Processing image upload...');
+    console.log('📸 Processing image upload...', {
+      originalSize: req.file.size,
+      mimeType: req.file.mimetype
+    });
     
-    // For now, convert image to base64 data URL for direct GPT-4 Vision analysis
+    // Check if image is too large (>10MB original)
+    if (req.file.size > 10 * 1024 * 1024) {
+      return res.status(413).json({ 
+        success: false, 
+        error: 'Image too large. Please use images smaller than 10MB.' 
+      });
+    }
+    
+    // Convert image to base64 data URL for direct GPT-4 Vision analysis
     // This avoids the need for external image hosting
     const base64Image = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
