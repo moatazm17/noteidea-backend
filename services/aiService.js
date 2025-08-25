@@ -73,15 +73,31 @@ class AIService {
             Return ONLY valid JSON with this exact schema (no extra commentary):
             {
               "title": "string",
-              "category": "cooking|travel|tutorial|review|other",
+              "category": "cooking|travel|tutorial|review|fitness|other",
               "keyInfo": "string",
               "details": ["string"],
               "tags": ["string"],
               "recipeName": "string",
-              "ingredients": ["string"],
+              "ingredients": ["string with measurements like '2 cups flour'"],
               "steps": ["string"],
-              "timeMinutes": "number|""",
-              "cost": "string"
+              "timeMinutes": number,
+              "servings": "string",
+              "cost": "string",
+              "places": ["string"],
+              "budget": "string",
+              "dates": "string",
+              "materials": ["string"],
+              "duration": "string",
+              "difficulty": "easy|intermediate|advanced",
+              "product": "string",
+              "price": "string",
+              "pros": ["string"],
+              "cons": ["string"],
+              "rating": "string",
+              "whereToBuy": "string",
+              "exercises": ["string"],
+              "targetMuscles": ["string"],
+              "equipment": ["string"]
             }
 
             Context:
@@ -170,6 +186,11 @@ class AIService {
 
         const prettySummary = buildSummary(analysis);
 
+        // SORTD-STYLE STRUCTURED EXTRACTION
+        const structuredData = this.extractStructuredData(analysis, analysis.category || 'other');
+        const insights = this.generateInsights(analysis, analysis.category || 'other', transcript);
+        const displaySummary = this.createDisplaySummary(analysis, analysis.category || 'other', structuredData);
+
         console.log('🤖 OpenAI analysis completed for TikTok');
         
         return {
@@ -179,7 +200,11 @@ class AIService {
           thumbnail: realMetadata?.thumbnail || this.generateTikTokThumbnail(url),
           category: analysis.category || 'other',
           details: analysis.details || [],
-          keyInfo: analysis.keyInfo || ''
+          keyInfo: analysis.keyInfo || '',
+          // NEW SORTD-STYLE FIELDS
+          structuredData,
+          insights,
+          displaySummary
         };
       } catch (error) {
         console.error('❌ OpenAI analysis failed for TikTok:', error);
@@ -853,6 +878,258 @@ class AIService {
               console.error('❌ Whisper transcription failed:', error);
               throw error;
             }
+          }
+
+          // SORTD-STYLE STRUCTURED DATA EXTRACTION
+          extractStructuredData(analysis, category) {
+            const structured = {};
+            
+            // Emoji mapping for ingredients
+            const ingredientEmojis = {
+              'potato': '🥔', 'tomato': '🍅', 'onion': '🧅', 'garlic': '🧄',
+              'lemon': '🍋', 'olive oil': '🫒', 'salt': '🧂', 'pepper': '🌶️',
+              'cheese': '🧀', 'milk': '🥛', 'egg': '🥚', 'flour': '🌾',
+              'pasta': '🍝', 'rice': '🍚', 'bread': '🍞', 'butter': '🧈',
+              'chicken': '🍗', 'beef': '🥩', 'fish': '🐟', 'shrimp': '🦐',
+              'carrot': '🥕', 'broccoli': '🥦', 'corn': '🌽', 'cucumber': '🥒',
+              'apple': '🍎', 'banana': '🍌', 'orange': '🍊', 'strawberry': '🍓',
+              'wine': '🍷', 'water': '💧', 'coffee': '☕', 'tea': '🍵',
+              'sugar': '🍯', 'chocolate': '🍫', 'cream': '🥛', 'yogurt': '🥛',
+              'herbs': '🌿', 'basil': '🌿', 'parsley': '🌿', 'dill': '🌿',
+              'oil': '🫒', 'vinegar': '🍾', 'sauce': '🥫', 'mayo': '🥫'
+            };
+
+            // Step action icons
+            const actionIcons = {
+              'preheat': '🔥', 'heat': '🔥', 'bake': '🔥', 'cook': '🔥',
+              'mix': '🥄', 'stir': '🥄', 'whisk': '🥄', 'combine': '🥄',
+              'chop': '🔪', 'cut': '🔪', 'slice': '🔪', 'dice': '🔪',
+              'wait': '⏰', 'rest': '⏰', 'cool': '❄️', 'chill': '❄️',
+              'serve': '🍽️', 'plate': '🍽️', 'garnish': '🌿', 'season': '🧂',
+              'pour': '🫗', 'drain': '💧', 'boil': '💦', 'simmer': '♨️'
+            };
+
+            if (category === 'cooking' && analysis.ingredients?.length) {
+              // Clean ingredients with emojis
+              structured.ingredients = (analysis.ingredients || []).map(ing => {
+                const cleaned = String(ing).trim();
+                let emoji = '';
+                for (const [key, icon] of Object.entries(ingredientEmojis)) {
+                  if (cleaned.toLowerCase().includes(key)) {
+                    emoji = icon;
+                    break;
+                  }
+                }
+                return { text: cleaned, emoji: emoji || '🥘' };
+              });
+
+              // Steps with action icons
+              structured.steps = (analysis.steps || []).map((step, idx) => {
+                const cleaned = String(step).trim();
+                let icon = '👉';
+                for (const [key, emoji] of Object.entries(actionIcons)) {
+                  if (cleaned.toLowerCase().includes(key)) {
+                    icon = emoji;
+                    break;
+                  }
+                }
+                return { text: cleaned, icon, number: idx + 1 };
+              });
+
+              structured.time = analysis.timeMinutes ? `${analysis.timeMinutes} min` : null;
+              structured.servings = analysis.servings || null;
+            }
+
+            else if (category === 'travel') {
+              structured.places = (analysis.places || analysis.details || []).slice(0, 5).map(p => ({
+                text: String(p),
+                emoji: '📍'
+              }));
+              structured.budget = analysis.budget || analysis.price || null;
+              structured.dates = analysis.dates || null;
+              structured.transportation = analysis.transportation || [];
+            }
+
+            else if (category === 'tutorial' || category === 'diy') {
+              structured.materials = (analysis.materials || analysis.details || []).slice(0, 10).map(m => ({
+                text: String(m),
+                emoji: '🛠️'
+              }));
+              structured.steps = (analysis.steps || []).map((s, idx) => ({
+                text: String(s),
+                icon: '👉',
+                number: idx + 1
+              }));
+              structured.duration = analysis.duration || analysis.timeMinutes || null;
+              structured.difficulty = analysis.difficulty || 'Intermediate';
+            }
+
+            else if (category === 'review' || category === 'product') {
+              structured.product = analysis.product || analysis.title;
+              structured.price = analysis.price || null;
+              structured.pros = (analysis.pros || []).map(p => ({
+                text: String(p),
+                emoji: '✅'
+              }));
+              structured.cons = (analysis.cons || []).map(c => ({
+                text: String(c),
+                emoji: '❌'
+              }));
+              structured.rating = analysis.rating || null;
+              structured.whereToBuy = analysis.whereToBuy || analysis.store || null;
+            }
+
+            else if (category === 'fitness' || category === 'workout') {
+              structured.exercises = (analysis.exercises || analysis.movements || analysis.details || []).map(e => ({
+                text: String(e),
+                emoji: '💪'
+              }));
+              structured.duration = analysis.duration || (analysis.timeMinutes ? `${analysis.timeMinutes} min` : '30 min');
+              structured.targetMuscles = analysis.targetMuscles || [];
+              structured.equipment = analysis.equipment || [];
+            }
+
+            else {
+              // Generic structured format
+              structured.keyPoints = (analysis.details || []).slice(0, 5).map(d => ({
+                text: String(d),
+                emoji: '📌'
+              }));
+              structured.links = analysis.links || [];
+            }
+
+            return structured;
+          }
+
+          // Generate smart insights like Sortd
+          generateInsights(analysis, category, transcript) {
+            const insights = [];
+
+            if (category === 'cooking') {
+              if (analysis.ingredients?.some(i => String(i).toLowerCase().includes('fresh'))) {
+                insights.push({
+                  icon: '🌿',
+                  title: 'Freshness Matters',
+                  text: 'Fresh ingredients make a big difference in this recipe'
+                });
+              }
+              if (analysis.steps?.some(s => String(s).toLowerCase().includes('crispy') || String(s).toLowerCase().includes('texture'))) {
+                insights.push({
+                  icon: '✨',
+                  title: 'Texture is Key',
+                  text: 'Pay attention to cooking times for the perfect texture'
+                });
+              }
+              if (analysis.timeMinutes && analysis.timeMinutes <= 20) {
+                insights.push({
+                  icon: '⚡',
+                  title: 'Quick & Easy',
+                  text: `Ready in just ${analysis.timeMinutes} minutes`
+                });
+              }
+              if (!insights.length) {
+                insights.push({
+                  icon: '👨‍🍳',
+                  title: 'Cooking Tip',
+                  text: 'Take your time with each step for best results'
+                });
+              }
+            }
+
+            else if (category === 'travel') {
+              insights.push({
+                icon: '💡',
+                title: 'Best Time to Visit',
+                text: 'Check seasonal weather and local events'
+              });
+              if (analysis.budget || analysis.price) {
+                insights.push({
+                  icon: '💰',
+                  title: 'Budget Tip',
+                  text: 'Book early for better deals on flights and hotels'
+                });
+              }
+              insights.push({
+                icon: '📸',
+                title: 'Don\'t Miss',
+                text: 'Research top photo spots and hidden gems'
+              });
+            }
+
+            else if (category === 'tutorial' || category === 'diy') {
+              insights.push({
+                icon: '🎯',
+                title: 'Pro Tip',
+                text: 'Take your time with each step for best results'
+              });
+              if (analysis.materials?.length > 5) {
+                insights.push({
+                  icon: '📝',
+                  title: 'Preparation',
+                  text: 'Gather all materials before starting'
+                });
+              }
+            }
+
+            else if (category === 'fitness' || category === 'workout') {
+              insights.push({
+                icon: '💪',
+                title: 'Form First',
+                text: 'Focus on proper form over speed or reps'
+              });
+              insights.push({
+                icon: '🔥',
+                title: 'Warm Up',
+                text: 'Always warm up before starting'
+              });
+            }
+
+            else {
+              insights.push({
+                icon: '💡',
+                title: 'Key Takeaway',
+                text: 'Save this for future reference'
+              });
+            }
+
+            // Limit to 3 insights
+            return insights.slice(0, 3);
+          }
+
+          // Create display summary for cards
+          createDisplaySummary(analysis, category, structured) {
+            if (category === 'cooking') {
+              const parts = [];
+              if (structured.time) parts.push(structured.time);
+              if (structured.ingredients?.length) parts.push(`${structured.ingredients.length} ingredients`);
+              if (structured.servings) parts.push(`${structured.servings} servings`);
+              return parts.join(' • ') || 'Recipe saved';
+            }
+            
+            else if (category === 'travel') {
+              const parts = [];
+              if (structured.places?.length) parts.push(structured.places[0].text);
+              if (structured.budget) parts.push(structured.budget);
+              if (structured.dates) parts.push(structured.dates);
+              return parts.join(' • ') || 'Travel content saved';
+            }
+
+            else if (category === 'tutorial' || category === 'diy') {
+              const parts = [];
+              if (structured.duration) parts.push(structured.duration);
+              if (structured.materials?.length) parts.push(`${structured.materials.length} materials`);
+              parts.push(structured.difficulty || 'Tutorial');
+              return parts.join(' • ');
+            }
+
+            else if (category === 'fitness' || category === 'workout') {
+              const parts = [];
+              if (structured.duration) parts.push(structured.duration);
+              if (structured.exercises?.length) parts.push(`${structured.exercises.length} exercises`);
+              return parts.join(' • ') || 'Workout saved';
+            }
+
+            return analysis.keyInfo || 'Content saved';
           }
 
           // Generate smart tags from title/content

@@ -54,6 +54,24 @@ const contentSchema = new mongoose.Schema({
   },
   errorMessage: {
     type: String
+  },
+  // SORTD-STYLE FIELDS
+  category: {
+    type: String,
+    default: 'other'
+  },
+  structuredData: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  insights: [{
+    icon: String,
+    title: String,
+    text: String
+  }],
+  displaySummary: {
+    type: String,
+    default: ''
   }
 });
 

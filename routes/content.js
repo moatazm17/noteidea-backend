@@ -115,6 +115,11 @@ async function processContentInBackground(contentId) {
         content.description = analysis.description || '';
         content.aiTags = analysis.tags || [content.contentType];
         content.thumbnail = analysis.thumbnail || content.thumbnail;
+        // SORTD-STYLE FIELDS
+        content.category = analysis.category || 'other';
+        content.structuredData = analysis.structuredData || {};
+        content.insights = analysis.insights || [];
+        content.displaySummary = analysis.displaySummary || '';
         content.processingStatus = 'completed';
         content.processedAt = new Date();
         
