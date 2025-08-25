@@ -39,7 +39,7 @@ class AIService {
   async analyzeContent(url, contentType) {
     try {
       // Force data URLs through screenshot analyzer to avoid huge prompts/logs
-      if (typeof url === 'string' && url.startsWith('data:image/')) {
+      if (typeof url === 'string' && (url.startsWith('data:image/') || /\/api\/image\//.test(url))) {
         contentType = 'screenshot';
       }
       if (contentType === 'tiktok') {

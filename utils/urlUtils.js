@@ -55,6 +55,11 @@ function detectContentType(url) {
       return 'screenshot';
     }
 
+    // Our internal served images (no extension) e.g. /api/image/<id>
+    if (typeof url === 'string' && /\/api\/image\//.test(url)) {
+      return 'screenshot';
+    }
+
     const urlObj = new URL(url);
     
     // Explicit platform detection first (so AI path can specialize)
