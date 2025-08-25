@@ -610,7 +610,6 @@ class AIService {
           }
 
           async getMasaTranscript(videoUrl) {
-            // Docs: provided by user via curl
             try {
               const resp = await axios.post(
                 'https://data.masa.ai/api/v1/search/live/tiktok',
@@ -631,23 +630,78 @@ class AIService {
                 }
               );
 
-              // Masa may return immediate transcript or a job structure depending on plan
-              if (resp.data && typeof resp.data === 'string') {
-                return resp.data;
+              // Immediate transcript cases
+              if (resp.data) {
+                if (typeof resp.data === 'string') return resp.data;
+                if (resp.data.transcript) return resp.data.transcript;
+                if (resp.data.result?.transcript) return resp.data.result.transcript;
               }
 
-              if (resp.data && resp.data.transcript) {
-                return resp.data.transcript;
+              // If a job uuid is returned, poll for result
+              const jobUuid = resp.data?.uuid || resp.data?.job_id || resp.data?.id;
+              if (!jobUuid) {
+                return null;
               }
 
-              // Some responses may include nested result
-              if (resp.data && resp.data.result && resp.data.result.transcript) {
-                return resp.data.result.transcript;
+              console.log('🔄 Masa job started, polling for transcript...', jobUuid);
+
+              // Potential result endpoints (without official docs, try common patterns)
+              const endpoints = [
+                (id) => `https://data.masa.ai/api/v1/search/results/${id}`,
+                (id) => `https://data.masa.ai/api/v1/search/result/${id}`,
+                (id) => `https://data.masa.ai/api/v1/jobs/${id}`,
+                (id) => `https://data.masa.ai/api/v1/search/live/tiktok/${id}`,
+                (id) => `https://data.masa.ai/api/v1/search/${id}`
+              ];
+
+              const headers = { 'Authorization': `Bearer ${process.env.MASA_API_KEY}` };
+
+              const startedAt = Date.now();
+              const timeoutMs = 90000; // 90s
+
+              while (Date.now() - startedAt < timeoutMs) {
+                for (const makeUrl of endpoints) {
+                  try {
+                    const url = makeUrl(jobUuid);
+                    const r = await axios.get(url, { headers, timeout: 10000 });
+                    const d = r.data;
+
+                    // Common shapes to check
+                    const candidates = [
+                      d,
+                      d?.data,
+                      d?.result,
+                      d?.results,
+                      d?.payload
+                    ];
+
+                    for (const c of candidates) {
+                      if (!c) continue;
+                      if (typeof c === 'string' && c.trim()) return c;
+                      if (c.transcript) return c.transcript;
+                      if (c.text) return c.text;
+                      if (Array.isArray(c) && c.length && typeof c[0] === 'string') return c.join(' ');
+                    }
+
+                    // Status fields
+                    const status = d?.status || d?.state;
+                    if (status === 'failed' || status === 'error') {
+                      console.log('❌ Masa job reported failure');
+                      return null;
+                    }
+
+                  } catch (pollErr) {
+                    // Ignore and try next endpoint/loop
+                  }
+                }
+
+                // Wait before next poll
+                await new Promise(res => setTimeout(res, 5000));
               }
 
+              console.log('⌛️ Masa polling timed out');
               return null;
             } catch (error) {
-              // Surface useful info for debugging
               const msg = error.response?.data ? JSON.stringify(error.response.data) : (error.message || 'unknown error');
               console.log('⚠️ Masa API error:', msg);
               return null;
