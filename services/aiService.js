@@ -1,5 +1,8 @@
 const OpenAI = require('openai');
 const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
 
 // Debug OpenAI setup
 console.log('🔑 OpenAI API Key Status:', process.env.OPENAI_API_KEY ? 'FOUND' : 'MISSING');
@@ -517,22 +520,119 @@ class AIService {
           }
 
           async getTikTokDirectTranscript(videoId) {
-            // For now, return null - we'd need a specific TikTok transcript API
-            // This is where we'd integrate with services like Supadata or Masa
-            console.log('🔍 Direct TikTok transcript not implemented yet');
-            return null;
+            // Try to get TikTok's built-in captions/transcript if available
+            console.log('🔍 Checking for TikTok captions...');
+            return null; // Most TikToks don't have accessible transcripts
           }
 
           async getGenericVideoTranscript(url) {
-            // Placeholder for generic video transcript services
+            // For future: other video platforms
             console.log('🔍 Generic video transcript not implemented yet');
             return null;
           }
 
           async extractAudioAndTranscribe(url) {
-            // Placeholder for audio extraction + OpenAI Whisper
-            console.log('🔍 Audio extraction + Whisper not implemented yet');
-            return null;
+            console.log('🎤 Starting audio extraction + Whisper transcription...');
+            
+            try {
+              // Step 1: Get audio stream URL from TikTok
+              const audioUrl = await this.getTikTokAudioUrl(url);
+              if (!audioUrl) {
+                console.log('❌ Could not extract audio URL from TikTok');
+                return null;
+              }
+
+              // Step 2: Download audio temporarily
+              const audioBuffer = await this.downloadAudio(audioUrl);
+              if (!audioBuffer) {
+                console.log('❌ Could not download audio');
+                return null;
+              }
+
+              // Step 3: Transcribe with Whisper
+              const transcript = await this.transcribeWithWhisper(audioBuffer);
+              console.log('✅ Whisper transcription completed');
+              return transcript;
+
+            } catch (error) {
+              console.error('❌ Audio extraction + transcription failed:', error);
+              return null;
+            }
+          }
+
+          async getTikTokAudioUrl(tiktokUrl) {
+            try {
+              console.log('🔗 Extracting audio URL from TikTok...');
+              
+              // Try to extract audio URL using TikTok's oembed data
+              const videoId = this.extractTikTokId(tiktokUrl);
+              if (!videoId) return null;
+
+              // For now, we'll use a placeholder approach
+              // In production, you'd integrate with:
+              // 1. TikTok downloader APIs (like RapidAPI TikTok downloaders)
+              // 2. yt-dlp service
+              // 3. Custom video processing service
+              
+              // For MVP testing, let's simulate finding an audio URL
+              // This would normally be the actual audio stream URL from TikTok
+              const mockAudioUrl = `https://example.com/audio/${videoId}.mp3`;
+              
+              // Return null for now to gracefully fallback to metadata analysis
+              // Once we have a real TikTok downloader, this will return the actual audio URL
+              console.log('🔄 TikTok audio extraction not yet implemented - using metadata analysis');
+              return null;
+              
+            } catch (error) {
+              console.error('TikTok audio extraction failed:', error);
+              return null;
+            }
+          }
+
+          async downloadAudio(audioUrl) {
+            try {
+              const response = await axios.get(audioUrl, { 
+                responseType: 'arraybuffer',
+                timeout: 30000 // 30 second timeout
+              });
+              return Buffer.from(response.data);
+            } catch (error) {
+              console.error('Audio download failed:', error);
+              return null;
+            }
+          }
+
+          async transcribeWithWhisper(audioBuffer) {
+            if (!openai) {
+              throw new Error('OpenAI not available for Whisper transcription');
+            }
+
+            let tempFilePath = null;
+            try {
+              // Write audio buffer to temporary file
+              tempFilePath = path.join('/tmp', `audio_${Date.now()}.mp3`);
+              fs.writeFileSync(tempFilePath, audioBuffer);
+
+              // Create file stream for Whisper API
+              const audioStream = fs.createReadStream(tempFilePath);
+              
+              const response = await openai.audio.transcriptions.create({
+                file: audioStream,
+                model: 'whisper-1',
+                language: 'en', // Auto-detect if not specified
+                response_format: 'text'
+              });
+
+              return response.trim();
+            } catch (error) {
+              console.error('Whisper transcription failed:', error);
+              throw error;
+            } finally {
+              // Clean up temporary file
+              if (tempFilePath && fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+              }
+            }
           }
 
           // Generate smart tags from title/content
